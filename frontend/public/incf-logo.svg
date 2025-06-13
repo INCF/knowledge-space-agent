@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 150">
+  <!-- Blue dot -->
+  <circle cx="40" cy="50" r="8" fill="#4A90E2"/>
+  
+  <!-- INCF text -->
+  <text x="60" y="65" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#2C3E50">incf</text>
+  
+  <!-- Blue vertical line -->
+  <rect x="220" y="20" width="4" height="80" fill="#4A90E2"/>
+  
+  <!-- Tagline -->
+  <text x="240" y="45" font-family="Arial, sans-serif" font-size="18" fill="#7F8C8D">enabling open and</text>
+  <text x="240" y="70" font-family="Arial, sans-serif" font-size="18" fill="#7F8C8D">FAIR neuroscience</text>
+</svg>

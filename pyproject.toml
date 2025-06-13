@@ -1,0 +1,22 @@
+[project]
+name = "knowledgespaceagent"
+version = "0.1.0"
+description = "Assistant"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dotenv>=0.9.9",
+    "fastapi>=0.115.12",
+    "openai>=1.86.0",
+    "requests>=2.32.4",
+    "uvicorn>=0.34.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
