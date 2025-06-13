@@ -30,10 +30,10 @@ const App: React.FC = () => {
       content: `Hello! I'm your INCF KnowledgeSpace assistant. I can help you discover and explore neuroscience datasets.
 
 Try asking me something like:
-• "Find datasets about brain imaging"
-• "Show me EEG data collections"
-• "Search for fMRI datasets"
-• "What datasets are available for cognitive neuroscience?"`,
+• "Brain imaging"
+• "EEG data "
+• "fMRI"
+• "cognitive neuroscience"`,
       timestamp: new Date()
     };
     setMessages([welcomeMessage]);
