@@ -23,7 +23,7 @@ app.add_middleware(
 )
 
 # Configuration
-google_api_key = os.getenv("GOOGLE_API_KEY", "default_key")
+google_api_key = os.getenv("GOOGLE_API_KEY")
 PAGE_SIZE = 5
 MODEL_NAME = "gemini-2.0-flash"
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -51,7 +51,6 @@ def gemini(messages: List[Dict[str, Any]], model: str = MODEL_NAME) -> str:
         raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
 
 def process_dataset_query(query: str) -> str:
-    """Process dataset query using exact logic from provided code"""
     if not query.strip():
         raise HTTPException(status_code=400, detail="No query entered")
 
@@ -60,7 +59,7 @@ def process_dataset_query(query: str) -> str:
         results = global_search_datasets(query, page=0, per_page=PAGE_SIZE)
         formatted = format_datasets_list(results)
 
-        # Prepare messages for Gemini
+        # Messages for Gemini
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {
