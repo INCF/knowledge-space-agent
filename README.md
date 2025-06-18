@@ -98,6 +98,16 @@ http://localhost:5000
 
 The frontend will communicate with the backend at port 8000.
 
+## Running with Docker
+
+To build and start both the backend and frontend in containers:
+```
+docker-compose up --build
+```
+**Frontend** →```http://localhost:3000```
+
+**Backend health** → ```http://localhost:8000/api/health```
+
 ## Additional Notes
 
 - **Environment**: Make sure `.env` is present before starting the backend.
