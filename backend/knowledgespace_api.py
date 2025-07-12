@@ -32,7 +32,7 @@ def get_datasets(datasource_id: str, page: int = 0, per_page: int = 50) -> Dict:
     """Get datasets from a specific datasource"""
     url = f"{KS_BASE}/datasources/{datasource_id}/datasets"
     params = {"page": page, "per_page": per_page}
-    response = requests.get(url, params=params, timeout=10)
+    response = requests.get(url, params=params, timeout=50)
     response.raise_for_status()
     return response.json()
 
@@ -65,7 +65,7 @@ def global_search_datasets(query: str, page: int = 0, per_page: int = 50) -> Dic
 
 def get_cde(cde_id: str) -> Dict:
     """Get Common Data Element information"""
-    url = f"{KS_BASE}/cdes/{cde_id}"
+    url = f"{KS_BASE}/cde/search?q={cde_id}"
     response = requests.get(url, timeout=10)
     response.raise_for_status()
     return response.json()
