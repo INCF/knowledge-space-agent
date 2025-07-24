@@ -1,26 +1,27 @@
 import json
 from pathlib import Path
 from typing import List, Sequence
+import os
+from dotenv import load_dotenv
 
 from tqdm import tqdm
 from google.cloud import aiplatform, aiplatform_v1
 from google.cloud.aiplatform_v1.types import IndexDatapoint
 
-# CONFIG 
-PROJECT_ID         = "knowledgespace-217609"
-PROJECT_NUMBER     = "452527985942"
-REGION             = "europe-north1"
+# Load environment variables from .env
+load_dotenv()
 
-LOCAL_EMBEDDINGS_PATH = Path("data_processing") / "embeddings.jsonl"
-
-INDEX_DISPLAY_NAME = "ks-chunks-index-nomic-768"
-INDEX_ENDPOINT_ID  = "6943442317684506624"
-DEPLOYED_INDEX_ID  = "deployed_ks_chunks_index_nomic_768"
-
-EMBEDDING_DIMENSIONS = 768
-DISTANCE_MEASURE     = "DOT_PRODUCT_DISTANCE"
-UPSERT_BATCH_SIZE    = 100
-
+# CONFIG (from .env or defaults)
+PROJECT_ID         = os.environ.get("GCP_PROJECT_ID", "knowledgespace-217609").replace('"','')
+REGION             = os.environ.get("GCP_REGION", "europe-north1").replace('"','')
+PROJECT_NUMBER     = os.environ.get("GCP_PROJECT_NUMBER", "452527985942").replace('"','')
+LOCAL_EMBEDDINGS_PATH = Path(os.environ.get("LOCAL_EMBEDDINGS_PATH", "data_processing/embeddings.jsonl").replace('"',''))
+INDEX_DISPLAY_NAME = os.environ.get("INDEX_DISPLAY_NAME", "ks-chunks-index-nomic-768").replace('"','')
+INDEX_ENDPOINT_ID  = os.environ.get("INDEX_ENDPOINT_ID", "6943442317684506624").replace('"','')
+DEPLOYED_INDEX_ID  = os.environ.get("DEPLOYED_INDEX_ID", "deployed_ks_chunks_index_nomic_768").replace('"','')
+EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", 768))
+DISTANCE_MEASURE     = os.environ.get("DISTANCE_MEASURE", "DOT_PRODUCT_DISTANCE").replace('"','')
+UPSERT_BATCH_SIZE    = int(os.environ.get("UPSERT_BATCH_SIZE", 100))
 API_ENDPOINT = f"{PROJECT_NUMBER}.{REGION}-{PROJECT_ID}.vdb.vertexai.goog"
 
 
