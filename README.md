@@ -1,6 +1,6 @@
 # KnowledgeSpace AI Agent - Dataset Discovery Assistant
 
-A web application that provides an AI-powered chatbot interface for dataset discovery, using Google Gemini API on the backend and a React-based frontend. 
+A web application that provides an AI-powered chatbot interface for dataset discovery, using Google Gemini API on the backend and a React-based frontend.
 
 ## Prerequisites
 
@@ -101,31 +101,27 @@ The frontend will communicate with the backend at port 8000.
 ## Running with Docker
 
 To build and start both the backend and frontend in containers:
+
 ```
 docker-compose up --build
 ```
-**Frontend** →```http://localhost:3000```
 
-**Backend health** → ```http://localhost:8000/api/health```
+**Frontend** →``http://localhost:3000``
 
-
-
+**Backend health** → ``http://localhost:8000/api/health``
 
 # Scraping & Data Preprocessing for KnowledgeSpace Datasets
 
-This repository provides a set of Python scripts and modules to ingest, clean, and enrich neuroscience metadata from Google Cloud Storage, as well as scrape  identifiers and references from linked resources.  
-Key features:
+This repository provides a set of Python scripts and modules to ingest, clean, and enrich neuroscience metadata from Google Cloud Storage, as well as scrape  identifiers and references from linked resources.Key features:
 
 - **Elasticsearch Scraping**: The `ksdata_scraping.py` script harvests raw dataset records directly from our Elasticsearch cluster and writes them to GCS. It uses a Point-In-Time (PIT) scroll to page through each index safely, authenticating via credentials stored in your environment.
-- **GCS I/O**: Download raw JSON lists from `gs://ks_datasets/raw_dataset/...` and upload preprocessed outputs to `gs://ks_datasets/preprocessed_data/...`.  
-- **HTML Cleaning**: Strip or convert embedded HTML (e.g. `<a>` tags) into plain text or Markdown.  
-- **URL Extraction**: Find and dedupe all links in descriptions and metadata for later retrieval.  
-- **Chunk Construction**: Build semantic “chunks” by concatenating fields (title, description, context labels, etc.) for downstream vectorization.  
-- **Metadata Filters**: Assemble structured metadata dictionaries (`species`, `region`, `keywords`, `identifier1…n`, etc.) for each record.    
-- **Per-Datasource Preprocessing**: Each data source has its own preprocessing script (e.g. `scr_017041_dandi.py`, `scr_006274_neuroelectro_ephys.py`) saved in `gcs://ks_datasets/preprocessed_data/`.  
-- **Extensible Configs**: Easily add new datasources by updating GCS paths and field mappings.  
-
-
+- **GCS I/O**: Download raw JSON lists from `gs://ks_datasets/raw_dataset/...` and upload preprocessed outputs to `gs://ks_datasets/preprocessed_data/...`.
+- **HTML Cleaning**: Strip or convert embedded HTML (e.g. `<a>` tags) into plain text or Markdown.
+- **URL Extraction**: Find and dedupe all links in descriptions and metadata for later retrieval.
+- **Chunk Construction**: Build semantic “chunks” by concatenating fields (title, description, context labels, etc.) for downstream vectorization.
+- **Metadata Filters**: Assemble structured metadata dictionaries (`species`, `region`, `keywords`, `identifier1…n`, etc.) for each record.
+- **Per-Datasource Preprocessing**: Each data source has its own preprocessing script (e.g. `scr_017041_dandi.py`, `scr_006274_neuroelectro_ephys.py`) saved in `gcs://ks_datasets/preprocessed_data/`.
+- **Extensible Configs**: Easily add new datasources by updating GCS paths and field mappings.
 
 ## Additional Notes
 

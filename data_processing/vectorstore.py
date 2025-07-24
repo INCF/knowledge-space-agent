@@ -6,7 +6,7 @@ from tqdm import tqdm
 from google.cloud import aiplatform, aiplatform_v1
 from google.cloud.aiplatform_v1.types import IndexDatapoint
 
-# ── CONFIG ───────────────────────────────────────────────
+# CONFIG 
 PROJECT_ID         = "knowledgespace-217609"
 PROJECT_NUMBER     = "452527985942"
 REGION             = "europe-north1"
