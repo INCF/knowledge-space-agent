@@ -1,0 +1,884 @@
+{
+  "scr_006274_neuroelectro_ephys": {
+    "description": "Configuration for scr_006274_neuroelectro_ephys",
+    "available_filters": {
+      "property_name": {
+        "field": "property_name.keyword",
+        "values": [
+          "ADP amplitude",
+          "ADP duration",
+          "AHP amplitude",
+          "AHP amplitude from resting",
+          "AHP duration",
+          "AHP voltage",
+          "FI slope",
+          "access resistance",
+          "adaptation percent (first/last ISI)",
+          "adaptation percent (last/first ISI)"
+        ]
+      }
+    }
+  },
+  "scr_014306_bbp_cellmorphology": {
+    "description": "Configuration for scr_014306_bbp_cellmorphology",
+    "available_filters": {
+      "cell": {
+        "field": "dc.subject.keyword",
+        "values": [
+          "Neocortex pyramidal cell",
+          "Neocortex Large Basket Cell",
+          "Neocortex Martinotti Cell",
+          "Neocortex Nest Basket Cell",
+          "Neocortex Late bifurcating Thick Tufted Pyramidal Cell",
+          "Neocortex Early bifurcating Thick Tufted Pyramidal Cell",
+          "Neocortex Small Basket Cell",
+          "Neocortex Untufted Pyramidal Cell",
+          "Neocortex Horizontal Axon Cell",
+          "Neocortex Star Pyramidal Cell"
+        ]
+      },
+      "region": {
+        "field": "region_term.keyword",
+        "values": [
+          "Somatosensory cortex hindlimb layer V",
+          "Somatosensory cortex hindlimb layer II/III",
+          "Somatosensory cortex hindlimb layer IV",
+          "Somatosensory cortex hindlimb layer VI",
+          "Somatosensory cortex hindlimb layer I"
+        ]
+      }
+    }
+  },
+  "scr_016433_conp": {
+    "description": "Configuration for scr_016433_conp",
+    "available_filters": {
+      "keywords": {
+        "field": "keywords.keyword",
+        "values": [
+          "canadian-open-neuroscience-platform",
+          "MRI",
+          "CSF protein levels",
+          "Cognition",
+          "Structural MRI",
+          "Alzheimer's disease",
+          "Functional MRI",
+          "Genetics",
+          "Longitudinal",
+          "Neurosensory"
+        ]
+      },
+      "isAbout": {
+        "field": "isAbout.keyword",
+        "values": [
+          "Homo sapiens",
+          "adult",
+          "Alzheimer's",
+          "Older adults human",
+          "Alzheimer's disease",
+          "older adult",
+          "Mus musculus",
+          "Callithrix jacchus",
+          "Healthy",
+          "total RNA"
+        ]
+      },
+      "license": {
+        "field": "license.keyword",
+        "values": [
+          "https://registeredpreventad.loris.ca/images/PREVENT-AD_Terms_of_Use.png",
+          "http://openpain.org/generalLicense.html",
+          "BY-NC-SA",
+          "CC BY-ND",
+          "CC-BY-4.0",
+          "CC-By Attribution 4.0 International",
+          "CC0",
+          "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International Public License",
+          "Refer to Brain-CODE Governance Policy",
+          "https://alleninstitute.org/legal/terms-use/"
+        ]
+      },
+      "formats": {
+        "field": "formats.keyword",
+        "values": [
+          "NIfTI",
+          "MINC",
+          "CSV",
+          "FASTA",
+          ".GFF",
+          "GFF",
+          "JSON",
+          "DICOM",
+          "STL",
+          "TSV"
+        ]
+      },
+      "creators": {
+        "field": "creators.keyword",
+        "values": [
+          "OpenPain",
+          "0",
+          "1",
+          "BigBrain project",
+          "The Allen Institute for Brain Science",
+          "Belmadani, Manuel",
+          "Genome Reference Consortium",
+          "Haas, Kurt",
+          "Kiar, Gregory",
+          "McDiarmid, Troy A."
+        ]
+      }
+    }
+  },
+  "scr_003510_cil_images": {
+    "description": "Configuration for scr_003510_cil_images",
+    "available_filters": {
+      "species": {
+        "field": "species.keyword",
+        "values": [
+          "Homo sapiens",
+          "human",
+          "man",
+          "Caenorhabditis elegans",
+          "Caenorhabditis elegans (Maupas, 1900)",
+          "nematode",
+          "mouse",
+          "Mus muscaris",
+          "Mus musculus",
+          "house mouse"
+        ]
+      },
+      "cell_type": {
+        "field": "cell_type.keyword",
+        "values": [
+          " Cuboidal endothelial cell of vascular tree",
+          " leukocyte",
+          " blood vessel endothelial cell",
+          " endocrine-paracrine cell of prostate gland",
+          " glandular cell of prostate",
+          " immune cell",
+          " luminal cell of prostate epithelium",
+          " perineural cell",
+          " prostate stromal cell"
+        ]
+      },
+      "biological_process": {
+        "field": "biological_process.keyword",
+        "values": [
+          " chronological cell aging",
+          "chronological cell ageing",
+          " response to chemical substance",
+          "response to chemical stimulus",
+          " cellular localization",
+          "mitosis",
+          " cell adhesion molecule activity",
+          " establishment or maintenance of cell polarity",
+          " establishment and/or maintenance of cell polarity"
+        ]
+      },
+      "imaging_mode": {
+        "field": "imaging_mode.keyword",
+        "values": [
+          "fluorescence microscopy",
+          "detection of electrons",
+          " widefield illumination",
+          "bright-field microscopy",
+          " differential interference contrast microscopy",
+          "DIC",
+          "transmission electron microscopy (TEM)",
+          " phase contrast microscopy",
+          " film"
+        ]
+      },
+      "dimension_units": {
+        "field": "dimension_units.keyword",
+        "values": [
+          "microns",
+          "nanometers",
+          "seconds"
+        ]
+      }
+    }
+  },
+  "scr_003105_neurondb_currents": {
+    "description": "Configuration for scr_003105_neurondb_currents",
+    "available_filters": {
+      "neuron": {
+        "field": "neuron.keyword",
+        "values": [
+          "Hippocampus CA1 pyramidal cell",
+          "Neocortex M1 pyramidal corticothalamic L6 cell",
+          "Neocortex V1 pyramidal corticothalamic L6 cell",
+          "Cerebellum Purkinje cell",
+          "Olfactory bulb main mitral cell",
+          "Olfactory bulb main tufted middle cell",
+          "Dentate gyrus granule cell",
+          "Hippocampus CA3 pyramidal cell",
+          "Thalamus geniculate nucleus/lateral principal neuron",
+          "Neocortex M1 pyramidal intratelencephalic L2-6 cell"
+        ]
+      },
+      "current": {
+        "field": "current.keyword",
+        "values": [
+          "I Na,t",
+          "I K",
+          "I A",
+          "I N",
+          "I h",
+          "I Calcium",
+          "I L high threshold",
+          "I p,q",
+          "I K,Ca",
+          "I T low threshold"
+        ]
+      },
+      "compartment": {
+        "field": "compartment.keyword",
+        "values": [
+          "Soma",
+          "Middle apical dendrite",
+          "Axon hillock",
+          "Proximal apical dendrite",
+          "Distal apical dendrite",
+          "Distal equivalent dendrite",
+          "Axon terminal",
+          "Proximal equivalent dendrite",
+          "Middle equivalent dendrite",
+          "Axon fiber"
+        ]
+      }
+    }
+  },
+  "scr_017041_sparc": {
+    "description": "Configuration for scr_017041_sparc",
+    "available_filters": {
+      "keywords": {
+        "field": "item.keywords.keyword",
+        "values": [
+          "stomach",
+          "rat",
+          "vagus nerve stimulation",
+          "colon",
+          "mouse",
+          "osparc",
+          "human",
+          "heart",
+          "pig",
+          "autonomic nervous system"
+        ]
+      }
+    }
+  },
+  "scr_002721_gensat_geneexpression": {
+    "description": "Configuration for scr_002721_gensat_geneexpression",
+    "available_filters": {
+      "gene_name": {
+        "field": "gene_name.keyword",
+        "values": [
+          "distal-less homeobox 2",
+          "aldehyde dehydrogenase 1 family, member L1",
+          "dopamine receptor D3",
+          "coiled-coil domain containing 3",
+          "adenosine A2a receptor",
+          "choline acetyltransferase",
+          "dopamine receptor D1",
+          "dopamine receptor D2",
+          "corticotropin releasing hormone",
+          "cholinergic receptor, nicotinic, alpha polypeptide 2 (neuronal)"
+        ]
+      },
+      "structure_name": {
+        "field": "structure_name.keyword",
+        "values": [
+          "Cerebellum",
+          "Cerebral cortex",
+          "Hippocampus",
+          "Pons",
+          "Medulla",
+          "Midbrain",
+          "Olfactory Bulb",
+          "Thalamus",
+          "Caudate Putamen",
+          "Amygdala"
+        ]
+      },
+      "stain": {
+        "field": "stain.keyword",
+        "values": [
+          "DAB",
+          "none"
+        ]
+      },
+      "acquisition_technique": {
+        "field": "acquisition_technique.keyword",
+        "values": [
+          "brightfield",
+          "confocal"
+        ]
+      },
+      "age": {
+        "field": "age.keyword",
+        "values": [
+          "P7",
+          "adult",
+          "E10.5"
+        ]
+      },
+      "expression_level": {
+        "field": "expression_level.keyword",
+        "values": [
+          "moderate to strong signal",
+          "weak signal",
+          "undetectable"
+        ]
+      }
+    }
+  },
+  "scr_013705_neuroml_models": {
+    "description": "Configuration for scr_013705_neuroml_models",
+    "available_filters": {
+      "model_type": {
+        "field": "model_type.keyword",
+        "values": [
+          "Cell",
+          "Channel",
+          "Synapse",
+          "Concentration",
+          "Network",
+          "Component"
+        ]
+      },
+      "neurolex_terms": {
+        "field": "neurolex_terms.keyword",
+        "values": [
+          "Neocortex basket cell",
+          "Neocortex Layer 5",
+          "Neocortex Layer 6",
+          "Neocortex Layer 4",
+          "Neocortex Layer 2",
+          "Neocortex Layer 3",
+          "Double Bouquet Cell",
+          "Bipolar Cell",
+          "Martinotti Cell",
+          "Neocortex Layer 1"
+        ]
+      },
+      "keywords": {
+        "field": "keywords.keyword",
+        "values": [
+          " Realistic Network",
+          " Neuron or other electrically excitable cell",
+          " Detailed Neuronal Models",
+          " Spatio-temporal Activity Patterns",
+          " Synapse",
+          " biophysical",
+          " somatosensory cortex",
+          " neocortex",
+          " rat",
+          " inhibitory"
+        ]
+      }
+    }
+  },
+  "scr_005031_openneuro": {
+    "description": "Configuration for scr_005031_openneuro",
+    "available_filters": {
+      "BIDSVersion": {
+        "field": "BIDSVersion.keyword",
+        "values": [
+          "1.0.2",
+          "1.8.0",
+          "1.7.0",
+          "1.1.1",
+          "1.0.1",
+          "1.6.0",
+          "1.0.0",
+          "1.4.0",
+          "1.2.0",
+          "1.9.0"
+        ]
+      },
+      "Authors": {
+        "field": "Authors.keyword",
+        "values": [
+          "Arnaud Delorme",
+          "James F Cavanagh",
+          "Kevin King",
+          "Michael J. Kahana",
+          "Stephen Gordon",
+          "Tony Johnson",
+          "James R. Booth",
+          "Joanes Grandjean",
+          "Haydn G. Herrema",
+          "Jon Touryan"
+        ]
+      },
+      "License": {
+        "field": "License.keyword",
+        "values": [
+          "CC0",
+          "PDDL",
+          "Creative Commons Attribution 4.0 International (CC-BY 4.0)",
+          "PD",
+          "CC BY",
+          "CC-BY-SA 4.0",
+          "CCO",
+          "Creative Commons CC0 1.0",
+          "PPDL"
+        ]
+      }
+    }
+  },
+  "scr_002145_neuromorpho_modelimage": {
+    "description": "Configuration for scr_002145_neuromorpho_modelimage",
+    "available_filters": {
+      "species": {
+        "field": "species.keyword",
+        "values": [
+          "mouse",
+          "rat",
+          "drosophila melanogaster",
+          "human",
+          "zebrafish",
+          "monkey",
+          "chimpanzee",
+          "Xenopus laevis",
+          "Semipalmated sandpiper",
+          "C. elegans"
+        ]
+      },
+      "strain_name": {
+        "field": "strain_name.keyword",
+        "values": [
+          "Sprague-Dawley",
+          "C57BL/6",
+          "Not reported",
+          "Wistar",
+          "Long-Evans",
+          "Not applicable",
+          "C57BL/6J",
+          "fru-Gal4",
+          "VGlut-Gal4",
+          "Gad1-Gal4"
+        ]
+      },
+      "staining_method": {
+        "field": "staining_method.keyword",
+        "values": [
+          "immunostaining",
+          "green fluorescent protein",
+          "Golgi",
+          "biocytin",
+          "enhanced green fluorescent protein",
+          "Golgi-Cox",
+          "osmium tetroxide/uranyl acetate",
+          "lucifer yellow",
+          "Not reported",
+          "Rapid Golgi"
+        ]
+      },
+      "brain_region": {
+        "field": "brain_region.keyword",
+        "values": [
+          "neocortex, Not reported",
+          "hippocampus, Not reported",
+          "neocortex, occipital, primary visual",
+          "hippocampus, dentate gyrus, granule layer",
+          "neocortex, somatosensory, primary somatosensory",
+          "neocortex, frontal, motor",
+          "neocortex, occipital",
+          "entorhinal cortex, medial, layer 2",
+          "retina, Not reported",
+          "retina, ganglion layer"
+        ]
+      },
+      "age": {
+        "field": "age.keyword",
+        "values": [
+          "5-15 days, adult",
+          "adult",
+          "not reported",
+          "6-8 days, not reported",
+          "18-18 days, embryonic",
+          "neonatal",
+          "1 days, neonatal",
+          "2-3 months, adult",
+          "3-3 months, adult",
+          "6-6 days, larval"
+        ]
+      },
+      "gender": {
+        "field": "gender.keyword",
+        "values": [
+          "Male",
+          "Female",
+          "Male or Female",
+          "Not Reported",
+          "Hermaphrodite"
+        ]
+      }
+    }
+  },
+  "scr_005069_brainminds": {
+    "description": "Configuration for scr_005069_brainminds",
+    "available_filters": {
+      "keywords": {
+        "field": "keywords.keyword",
+        "values": [
+          "Callithrix jacchus",
+          "brain",
+          "marmoset",
+          "NIfTI",
+          "ECoG",
+          "Electrocorticography",
+          "MRI",
+          "common marmoset",
+          "3D",
+          "3D Slicer"
+        ]
+      }
+    }
+  },
+  "scr_014194_icg_ionchannels": {
+    "description": "Configuration for scr_014194_icg_ionchannels",
+    "available_filters": {
+      "neuron_type": {
+        "field": "neuron_type.keyword",
+        "values": [
+          "pyramidal cell",
+          " basket cell",
+          " interneuron",
+          "interneuron",
+          "granule cell",
+          " hilar mossy cell",
+          "Purkinje cell",
+          " Nr5a1-Cre neuron",
+          " Pvalb-IRES-Cre neuron",
+          " regular spiking (RS) cell"
+        ]
+      },
+      "animal_model": {
+        "field": "animal_model.keyword",
+        "values": [
+          "rat",
+          "mouse",
+          " rat",
+          "Sprague-Dawley",
+          "generic",
+          "Wistar",
+          "cat",
+          "human",
+          "mammal"
+        ]
+      },
+      "brain_area": {
+        "field": "brain_area.keyword",
+        "values": [
+          "hippocampus",
+          " CA1",
+          " cortex",
+          "layer 5",
+          " V1",
+          " hippocampus",
+          "CA3",
+          " layer 4",
+          "visual cortex",
+          " visual cortex"
+        ]
+      },
+      "age": {
+        "field": "age.keyword",
+        "values": [
+          " P53-P59 in transcriptomics",
+          "P45-P70 in electrophysiology",
+          "adult",
+          "not specified",
+          "generic",
+          "unspecified",
+          "P18-25",
+          "various",
+          "P18-22"
+        ]
+      }
+    }
+  },
+  "scr_017571_dandi": {
+    "description": "Configuration for scr_017571_dandi",
+    "available_filters": {
+      "dataStandard": {
+        "field": "dataStandard.keyword",
+        "values": [
+          "Neurodata Without Borders (NWB)",
+          "Brain Imaging Data Structure (BIDS)"
+        ]
+      },
+      "about": {
+        "field": "about.keyword",
+        "values": [
+          "Primary motor cortex",
+          "hippocampus",
+          "primary motor cortex",
+          "Cortex",
+          "Medial Temporal Lobe",
+          "Premotor cortex",
+          "neocortex",
+          "Brain",
+          "CA1 subfield of the hippocampus (CA1)",
+          "CA3 subfield of the hippocampus (CA3)"
+        ]
+      },
+      "measurementTechnique": {
+        "field": "measurementTechnique.keyword",
+        "values": [
+          "analytical technique",
+          "surgical technique",
+          "behavioral technique",
+          "spike sorting technique",
+          "multi electrode extracellular electrophysiology recording technique",
+          "two-photon microscopy technique",
+          "signal filtering technique",
+          "current clamp technique",
+          "voltage clamp technique",
+          "fourier analysis technique"
+        ]
+      },
+      "keywords": {
+        "field": "keywords.keyword",
+        "values": [
+          "mouse",
+          "human",
+          "Patch-seq",
+          "electrophysiology",
+          "cortex",
+          "hippocampus",
+          "visual cortex",
+          "multimodal",
+          "optogenetics",
+          "NLB"
+        ]
+      },
+      "species": {
+        "field": "species.keyword",
+        "values": [
+          "Mus musculus - House mouse",
+          "Rattus norvegicus - Norway rat",
+          "House mouse",
+          "Homo sapiens - Human",
+          "Macaca mulatta - Rhesus monkey",
+          "Danio rerio - Zebra fish",
+          "Human",
+          "Caenorhabditis elegans",
+          "Rhesus monkey",
+          "Bos taurus - Cattle"
+        ]
+      },
+      "license": {
+        "field": "license.keyword",
+        "values": [
+          "spdx:CC-BY-4.0",
+          "spdx:CC0-1.0",
+          "spdx:CC-BY-NC-4.0"
+        ]
+      }
+    }
+  },
+  "scr_017612_ebrains": {
+    "description": "Configuration for scr_017612_ebrains",
+    "available_filters": {
+      "sex": {
+        "field": "sex.keyword",
+        "values": [
+          "male",
+          "female",
+          "not detectable"
+        ]
+      },
+      "species": {
+        "field": "species.keyword",
+        "values": [
+          "Mus musculus",
+          "Rattus norvegicus",
+          "Danio rerio"
+        ]
+      },
+      "techniques": {
+        "field": "techniques.keyword",
+        "values": [
+          "cytoarchitectonic mapping",
+          "magnetic resonance imaging",
+          "silver staining",
+          "probabilistic anatomical parcellation technique",
+          "spatial registration",
+          "cryosectioning",
+          "quantitative analysis",
+          "autoradiography",
+          "inter-subject analysis",
+          "diffusion-weighted imaging"
+        ]
+      },
+      "preparation": {
+        "field": "preparation.keyword",
+        "values": [
+          "ex vivo",
+          "in vivo",
+          "in silico",
+          "in vitro"
+        ]
+      },
+      "experimental_approach": {
+        "field": "experimental_approach.keyword",
+        "values": [
+          "anatomy",
+          "microscopy",
+          "histology",
+          "neuroimaging",
+          "neural connectivity",
+          "expression characterization",
+          "multimodal research",
+          "electrophysiology",
+          "behavior",
+          "informatics"
+        ]
+      }
+    }
+  },
+  "scr_002978_aba_expression": {
+    "description": "Configuration for scr_002978_aba_expression",
+    "available_filters": {
+      "gene_name": {
+        "field": "gene_name.keyword",
+        "values": [
+          "-",
+          "similar to hypothetical protein",
+          "DNA binding protein with his-thr domain",
+          "fibronectin leucine rich transmembrane protein 3",
+          "heat shock protein 2",
+          "heat shock protein 8",
+          "ribosomal protein S6 kinase polypeptide 1",
+          "ribosomal protein S6 kinase, polypeptide 2",
+          "similar to 60S ribosomal protein L12",
+          "similar to CUB and Sushi multiple domains 2"
+        ]
+      },
+      "gene_symbol": {
+        "field": "gene_symbol.keyword",
+        "values": [
+          "0610005G16Rik*",
+          "0610005I03Rik*",
+          "0610005I04",
+          "0610006F12Rik*",
+          "0610006I08Rik",
+          "0610007C21Rik",
+          "0610007L01Rik",
+          "0610007N19Rik",
+          "0610007P06Rik",
+          "0610007P08Rik"
+        ]
+      },
+      "structure_name": {
+        "field": "structure_name.keyword",
+        "values": [
+          "Striatum dorsal region",
+          "Lateral septal complex",
+          "Cerebellum",
+          "Striatum-like amygdalar nuclei",
+          "Retrohippocampal region",
+          "Hypothalamus",
+          "Pons",
+          "Medulla",
+          "Cerebral cortex",
+          "Midbrain"
+        ]
+      },
+      "species": {
+        "field": "species.keyword",
+        "values": [
+          "Mouse"
+        ]
+      }
+    }
+  },
+  "scr_006131_hba_atlas": {
+    "description": "Configuration for scr_006131_hba_atlas",
+    "available_filters": {
+      "species": {
+        "field": "species.keyword",
+        "values": [
+          "human"
+        ]
+      },
+      "brain_region": {
+        "field": "brain_region.keyword",
+        "values": [
+          "cerebellum",
+          "lateral ventricle",
+          "cingulate sulcus",
+          "superior frontal gyrus",
+          "cingulate gyrus",
+          "medial longitudinal fissure",
+          "fornix",
+          "parietooccipital sulcus",
+          "hippocampus",
+          "cerebellar vermis"
+        ]
+      },
+      "brain_view": {
+        "field": "brain_view.keyword",
+        "values": [
+          "horizontal",
+          "sagittal",
+          "coronal"
+        ]
+      }
+    }
+  },
+  "scr_007271_modeldb_models": {
+    "description": "Configuration for scr_007271_modeldb_models",
+    "available_filters": {
+      "model_concepts": {
+        "field": "model_concepts.keyword",
+        "values": [
+          "Action Potentials",
+          "Activity Patterns",
+          "Oscillations",
+          "Detailed Neuronal Models",
+          "Calcium dynamics",
+          "Ion Channel Kinetics",
+          "Simplified Models",
+          "Active Dendrites",
+          "Bursting",
+          "Methods"
+        ]
+      },
+      "simulator_software": {
+        "field": "simulator_software.keyword",
+        "values": [
+          "NEURON",
+          "MATLAB",
+          "C or C++ program",
+          "XPP",
+          "NEURON;Python",
+          "MATLAB (web link to model)",
+          "Python;NEURON",
+          "GENESIS",
+          "Python",
+          "NEURON;MATLAB"
+        ]
+      },
+      "model_type": {
+        "field": "model_type.keyword",
+        "values": [
+          "Neuron or other electrically excitable cell",
+          "Realistic Network",
+          "Channel/Receptor",
+          "Synapse",
+          "Connectionist Network",
+          "Dendrite",
+          "Realistic Network; Neuron or other electrically excitable cell",
+          "Axon",
+          "Molecular Network"
+        ]
+      }
+    }
+  }
+}
