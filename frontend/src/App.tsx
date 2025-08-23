@@ -141,7 +141,7 @@ Try asking me something like:
               <Logo className="brand-logo" />
               <div className="brand-text">
                 <h1 className="brand-title">KnowledgeSpace AI</h1>
-                <p className="brand-subtitle">Neuroscience Dataset Discovery Assistant</p>
+                <p className="brand-subtitle">Neuroscience Dataset Search Assistant</p>
               </div>
             </div>
             <div className="header-actions">
