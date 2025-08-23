@@ -1,4 +1,4 @@
-# KnowledgeSpace AI Agent - Dataset Discovery Assistant
+# KnowledgeSpace AI Agent - Dataset Search Assistant
 
 A web application that provides an AI-powered chatbot interface for dataset discovery, using Google Gemini API on the backend and a React-based frontend.
 
