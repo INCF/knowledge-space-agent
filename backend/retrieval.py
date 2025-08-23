@@ -1,3 +1,4 @@
+# retrieval.py
 import os
 import json
 import logging
@@ -11,6 +12,11 @@ from transformers import AutoModel, AutoTokenizer
 logger = logging.getLogger("retrieval")
 logger.setLevel(logging.INFO)
 
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_h)
+
 
 @dataclass
 class RetrievedItem:
@@ -20,47 +26,62 @@ class RetrievedItem:
     metadata: Dict[str, Any]
     primary_link: Optional[str]
     other_links: List[str]
-    similarity: float  # Higher is better
+    similarity: float 
 
 
 class Retriever:
     """
-    Matching Engine retriever that uses:
-      - INDEX_ENDPOINT_ID_FULL (full resource path)
+    Vertex AI Matching Engine retriever.
+
+    Environment variables required to enable vector search:
+      - GCP_PROJECT_ID
+      - GCP_REGION
+      - INDEX_ENDPOINT_ID_FULL   (full resource path, e.g. projects/.../locations/.../indexEndpoints/...)
       - DEPLOYED_INDEX_ID
-      - BigQuery docstore (dataset/table/location)
+
+    Optional:
+      - EMBED_MODEL_NAME         default: nomic-ai/nomic-embed-text-v1.5
+      - BQ_DATASET_ID            default: ks_metadata
+      - BQ_TABLE_ID              default: docstore
+      - BQ_LOCATION              default: US
+      - EMBED_MAX_TOKENS         default: 1024
+      - QUERY_CHAR_LIMIT         default: 8000
     """
 
     def __init__(self):
-        # ---- Environment ----
+        
         self.project_id = os.getenv("GCP_PROJECT_ID", "")
         self.region = os.getenv("GCP_REGION", "")
-
-        # IMPORTANT: full resource path e.g.
-        # projects/xxx/locations/us-central1/indexEndpoints/1234567890
         self.index_endpoint_full = os.getenv("INDEX_ENDPOINT_ID_FULL", "")
         self.deployed_id = os.getenv("DEPLOYED_INDEX_ID", "")
 
-        self.embed_model_name = os.getenv(
-            "EMBED_MODEL_NAME", "nomic-ai/nomic-embed-text-v1.5"
-        )
-
+        
+        self.embed_model_name = os.getenv("EMBED_MODEL_NAME", "nomic-ai/nomic-embed-text-v1.5")
         self.bq_dataset = os.getenv("BQ_DATASET_ID", "ks_metadata")
         self.bq_table = os.getenv("BQ_TABLE_ID", "docstore")
         self.bq_location = os.getenv("BQ_LOCATION", "US")
+        try:
+            self.embed_max_tokens = int(os.getenv("EMBED_MAX_TOKENS", "1024"))
+        except Exception:
+            self.embed_max_tokens = 1024
+        try:
+            self.query_char_limit = int(os.getenv("QUERY_CHAR_LIMIT", "8000"))
+        except Exception:
+            self.query_char_limit = 8000
 
+        # Enable only if everything is present
         self.is_enabled = all(
             [self.project_id, self.region, self.index_endpoint_full, self.deployed_id]
         )
         if not self.is_enabled:
             logger.warning(
-                "GCP env incomplete. Vector search disabled "
-                f"(project={bool(self.project_id)}, region={bool(self.region)}, "
-                f"endpoint_full={bool(self.index_endpoint_full)}, deployed={bool(self.deployed_id)})"
+                "Vector search disabled due to incomplete GCP env: "
+                f"project={bool(self.project_id)}, region={bool(self.region)}, "
+                f"endpoint_full={bool(self.index_endpoint_full)}, deployed={bool(self.deployed_id)}"
             )
             return
 
-        # Cloud clients 
+        # Cloud clients
         try:
             aiplatform.init(project=self.project_id, location=self.region)
             self.index_ep = aiplatform.MatchingEngineIndexEndpoint(
@@ -68,11 +89,10 @@ class Retriever:
             )
             self.bq = bigquery.Client(project=self.project_id)
         except Exception as e:
-            logger.error(f"Failed to initialize GCP clients: {e}")
+            logger.error(f"GCP client initialization failed: {e}")
             self.is_enabled = False
             return
 
-        # HF embedder 
         try:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -81,16 +101,26 @@ class Retriever:
             self.model = AutoModel.from_pretrained(
                 self.embed_model_name, trust_remote_code=True
             ).eval().to(self.device)
-            print(f"Vector search initialized successfully on {self.device}")
+            logger.info(f"Vector search initialized on device={self.device} using {self.embed_model_name}")
         except Exception as e:
-            logger.error(f"Failed to initialize embedding model: {e}")
+            logger.error(f"Embedding model initialization failed: {e}")
             self.is_enabled = False
 
-    # Embedding 
+    # Embedding
     def _embed(self, text: str) -> List[float]:
-        text = " ".join((text or "").split())[:8000]
+        """
+        Returns a normalized embedding vector for the given text.
+        Raises on failure (caller handles).
+        """
+        normalized = " ".join((text or "").split())
+        if self.query_char_limit > 0:
+            normalized = normalized[: self.query_char_limit]
         toks = self.tokenizer(
-            text, return_tensors="pt", truncation=True, padding=True, max_length=1024
+            normalized,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=self.embed_max_tokens,
         ).to(self.device)
         with torch.no_grad():
             out = self.model(**toks, return_dict=True)
@@ -102,7 +132,7 @@ class Retriever:
         rep = torch.nn.functional.normalize(rep, p=2, dim=1)
         return rep[0].cpu().tolist()
 
-    # BigQuery metadata 
+    # BigQuery metadata
     def _bq_fetch(self, ids: List[str]) -> Dict[str, Dict[str, Any]]:
         if not ids:
             return {}
@@ -131,17 +161,16 @@ class Retriever:
             }
         return out
 
-    # Public API 
     def search(
         self, query: str, top_k: int = 20, context: Optional[Dict[str, Any]] = None
     ) -> List[RetrievedItem]:
         """
-        Returns a list[RetrievedItem]. If context['raw'] is True, use the query verbatim.
+        Executes a similarity search in Matching Engine.
+
         """
         if not self.is_enabled or not query:
             return []
 
-        # Do NOT modify the query if 'raw' is set (agents pass raw=True)
         qtext = query if (context or {}).get("raw") else query
 
         try:
@@ -151,8 +180,7 @@ class Retriever:
             return []
 
         try:
-            # High-level SDK returns a list of neighbors per query.
-            n = max(1, min(top_k * 2, 100))
+            n = max(1, min((top_k or 20) * 2, 100))
             results = self.index_ep.find_neighbors(
                 deployed_index_id=self.deployed_id, queries=[vec], num_neighbors=n
             )
@@ -163,7 +191,6 @@ class Retriever:
             ids = [nb.id for nb in neighbors]
             distances = [nb.distance for nb in neighbors]
 
-            # Fetch metadata from BQ
             try:
                 meta_map = self._bq_fetch(ids)
             except Exception as e:
@@ -174,21 +201,16 @@ class Retriever:
             for dp_id, dist in zip(ids, distances):
                 meta_info = meta_map.get(dp_id, {})
                 md = meta_info.get("metadata", {}) or {}
-                title = (
-                    md.get("dc.title")
-                    or md.get("title")
-                    or md.get("name")
-                    or "Untitled"
-                )
+                title = md.get("dc.title") or md.get("title") or md.get("name") or "Untitled"
                 content = meta_info.get("chunk", md.get("description", "")) or ""
-                # Extract the actual dataset identifier/URL from metadata
-                link = (md.get("primary_link") or 
-                        md.get("url") or 
-                        md.get("link") or 
-                        md.get("identifier") or  # This is where the actual dataset URL is stored
-                        md.get("dc", {}).get("identifier") or  # Check nested dc.identifier
-                        "")
-                # Matching Engine distance may be negative dot-product/L2; convert to similarity
+                link = (
+                    md.get("primary_link")
+                    or md.get("url")
+                    or md.get("link")
+                    or md.get("identifier")
+                    or (md.get("dc", {}) if isinstance(md.get("dc"), dict) else {}).get("identifier")
+                    or ""
+                )
                 try:
                     similarity = -float(dist) if dist is not None else 0.0
                 except Exception:
@@ -207,7 +229,7 @@ class Retriever:
                 )
 
             items.sort(key=lambda x: x.similarity, reverse=True)
-            return items[: top_k or 10]
+            return items[: (top_k or 20)]
         except Exception as e:
-            logger.error(f"Vector search failed: {e}")
+            logger.error(f"Matching Engine search failed: {e}")
             return []
