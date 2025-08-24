@@ -59,7 +59,7 @@ class Retriever:
         self.embed_model_name = os.getenv("EMBED_MODEL_NAME", "nomic-ai/nomic-embed-text-v1.5")
         self.bq_dataset = os.getenv("BQ_DATASET_ID", "ks_metadata")
         self.bq_table = os.getenv("BQ_TABLE_ID", "docstore")
-        self.bq_location = os.getenv("BQ_LOCATION", "US")
+        self.bq_location = os.getenv("BQ_LOCATION","EU")
         try:
             self.embed_max_tokens = int(os.getenv("EMBED_MAX_TOKENS", "1024"))
         except Exception:

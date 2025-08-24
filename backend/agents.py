@@ -2,7 +2,6 @@
 import os
 import re
 import json
-import aiohttp
 from enum import Enum
 from typing import Dict, List, Optional, TypedDict, Any
 
@@ -11,7 +10,60 @@ from langgraph.graph import StateGraph, END
 from ks_search_tool import general_search, global_fuzzy_keyword_search
 from retrieval import Retriever
 
+# --- LLM (Gemini) client setup ----------------------------------------------
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except Exception as _e:
+    raise RuntimeError("google-genai is required. Install with: pip install google-genai") from _e
 
+
+def _use_vertex() -> bool:
+    """
+    Use Vertex AI if GCP_PROJECT_ID is present (unless GEMINI_USE_VERTEX explicitly disables it).
+    """
+    flag = os.getenv("GEMINI_USE_VERTEX")
+    if flag is not None:
+        return flag.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(os.getenv("GCP_PROJECT_ID"))
+
+
+def _require_llm_creds():
+    if _use_vertex():
+        if not os.getenv("GCP_PROJECT_ID"):
+            raise RuntimeError("GCP_PROJECT_ID must be set for Vertex mode.")
+        # Ensure service account path is set relative to this file (if not provided)
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.join(os.path.dirname(__file__), "service-account.json")
+
+    else:
+        if not os.getenv("GOOGLE_API_KEY"):
+            raise RuntimeError("GOOGLE_API_KEY must be set for API-key mode.")
+
+
+_GENAI_CLIENT = None
+
+
+def _get_genai_client():
+    global _GENAI_CLIENT
+    if _GENAI_CLIENT is not None:
+        return _GENAI_CLIENT
+    if _use_vertex():
+        project = os.getenv("GCP_PROJECT_ID")
+        location = os.getenv("GCP_REGION") or "europe-west4"
+        if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            sa_path = os.path.join(os.path.dirname(__file__), "service-account.json")
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = sa_path
+        _GENAI_CLIENT = genai.Client(vertexai=True, project=project, location=location)
+    else:
+        _GENAI_CLIENT = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    return _GENAI_CLIENT
+
+
+FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
+FLASH_LITE_MODEL = os.getenv("GEMINI_FLASH_LITE_MODEL", "gemini-2.5-flash-lite")
+
+
+# --- Query intent/types ------------------------------------------------------
 class QueryIntent(Enum):
     DATA_DISCOVERY = "data_discovery"
     ACCESS_DOWNLOAD = "access_download"
@@ -30,11 +82,6 @@ LLM_TOKEN_LIMITS = {
 }
 
 
-def _require_api_key():
-    if not os.getenv("GOOGLE_API_KEY"):
-        raise RuntimeError("GOOGLE_API_KEY is not set.")
-
-
 def _is_more_query(text: str) -> Optional[int]:
     t = (text or "").strip().lower()
     if not t:
@@ -44,71 +91,57 @@ def _is_more_query(text: str) -> Optional[int]:
     m = re.match(r"^(?:next|more|show)\s+(\d{1,3})\b", t)
     return int(m.group(1)) if m else (None if any(w in t for w in ["more", "next", "continue"]) else None)
 
+
+# --- LLM calls using google.genai -------------------------------------------
 async def call_gemini_for_keywords(query: str) -> List[str]:
     """
     Extract raw keywords/phrases from the user's text using the LLM only.
+    No local greeting filters — prompt handles exclusions. Minimal trim+dedupe here.
     """
-    _require_api_key()
+    _require_llm_creds()
+    client = _get_genai_client()
     prompt = (
         "Extract important search keywords and multi-word phrases from a neuroscience *data* query.\n"
         "Return STRICT JSON only:\n"
         "{ \"keywords\": [\"...\"] }\n"
         "\n"
         "CRITICAL RULES:\n"
-        "1) Output ONLY tokens/phrases that appear verbatim in the user text (case-insensitive). "
-        "   No stemming, no synonyms, no expansions.\n"
-        "2) EXCLUDE greetings/small talk and their misspellings/elongations "
-        "   (e.g., hi, hello, hellow, helo, hey, yo, hola, hallo, howdy, greetings, sup, heyya, heyyy, hiii).\n"
-        "   Treat any form matching /h+e*l+l*o+w*/ or /he+y+/ or /hi+/ as a greeting and DO NOT include it.\n"
+        "1) Output ONLY tokens/phrases that appear verbatim in the user text (case-insensitive). No stemming/synonyms.\n"
+        "2) EXCLUDE greetings/small talk and their misspellings/elongations (hi, hello, hellow, helo, hey, yo, hola, "
+        "   hallo, howdy, greetings, sup, heyya, heyyy, hiii). Treat /h+e*l+l*o+w*/, /he+y+/, /hi+/ as greetings.\n"
         "3) Do NOT include words just because they *look like* a greeting (e.g., 'yellow' from 'hellow').\n"
         "4) Keep multi-word technical phrases intact (e.g., 'medial prefrontal cortex', 'two-photon imaging').\n"
         "5) Preserve license/format tokens exactly (PDDL, CC0, NWB, BIDS, NIfTI, DICOM, HDF5).\n"
         "6) If the message is only a greeting/small talk, return {\"keywords\": []}.\n"
         f"\nQuery: {query}\n"
     )
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.0,
-            "maxOutputTokens": LLM_TOKEN_LIMITS["keywords"],
-            "responseMimeType": "application/json",
-        },
-    }
-    async with aiohttp.ClientSession() as s:
-        async with s.post(
-            f"{url}?key={os.getenv('GOOGLE_API_KEY')}",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=12),
-        ) as r:
-            r.raise_for_status()
-            data = await r.json()
-
-    # Parse and do minimal normalization only
-    out = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
-    kws = out.get("keywords", [])
+    cfg = genai_types.GenerateContentConfig(
+        temperature=0.0,
+        max_output_tokens=LLM_TOKEN_LIMITS["keywords"],
+        response_mime_type="application/json",
+    )
+    resp = client.models.generate_content(model=FLASH_LITE_MODEL, contents=[prompt], config=cfg)
+    out = json.loads(resp.text or "{}")
+    kws = out.get("keywords", []) or []
     normalized: List[str] = []
     for k in kws:
         if not isinstance(k, str):
             continue
         t = k.strip()
-        # Allow "License:PDDL" → "PDDL" style tokens, nothing else.
         if ":" in t:
             t = t.split(":", 1)[1].strip()
         if t:
             normalized.append(t)
-
-    # Deduplicate while preserving order and cap at 20
     return list(dict.fromkeys(normalized))[:20]
-
 
 
 async def call_gemini_rewrite_with_history(query: str, history: List[str]) -> str:
     """
     Rewrite the user's query using short chat history if necessary.
+    Keeps exact tokens and multi-word phrases intact.
     """
-    _require_api_key()
+    _require_llm_creds()
+    client = _get_genai_client()
     last_user_turns = [h for h in history if h.startswith("User: ")]
     ctx = "\n".join(last_user_turns[-6:])
     prompt = (
@@ -125,22 +158,12 @@ async def call_gemini_rewrite_with_history(query: str, history: List[str]) -> st
         f"Context:\n{ctx}\n"
         f"Latest: {query}\n"
     )
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.0, "maxOutputTokens": LLM_TOKEN_LIMITS["rewrite"]},
-    }
-    async with aiohttp.ClientSession() as s:
-        async with s.post(
-            f"{url}?key={os.getenv('GOOGLE_API_KEY')}",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=12),
-        ) as r:
-            r.raise_for_status()
-            data = await r.json()
-    text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-    text = (text or "").strip()
+    cfg = genai_types.GenerateContentConfig(
+        temperature=0.0,
+        max_output_tokens=LLM_TOKEN_LIMITS["rewrite"],
+    )
+    resp = client.models.generate_content(model=FLASH_LITE_MODEL, contents=[prompt], config=cfg)
+    text = (resp.text or "").strip()
     if not text:
         raise RuntimeError("Gemini rewrite returned empty text.")
     return text
@@ -148,10 +171,12 @@ async def call_gemini_rewrite_with_history(query: str, history: List[str]) -> st
 
 async def call_gemini_detect_intents(query: str, history: List[str]) -> List[str]:
     """
-    Multi-label intent detection driven by prompt rules:
-    - If any data-related tokens exist, prefer data_discovery and drop greeting.
+    Multi-label intent detection via LLM.
+    - 'greeting' only when message is purely small talk.
+    - If any data-related tokens exist, prefer data_discovery.
     """
-    _require_api_key()
+    _require_llm_creds()
+    client = _get_genai_client()
     allowed = [i.value for i in QueryIntent]
     last_user_turns = [h for h in history if h.startswith("User: ")]
     ctx = "\n".join(last_user_turns[-6:])
@@ -162,7 +187,7 @@ async def call_gemini_detect_intents(query: str, history: List[str]) -> List[str
         "\n"
         "Decisions:\n"
         "• Choose 'greeting' ONLY if the message is essentially small talk/a salutation (e.g., hi/hello/hellow/hey etc.).\n"
-        "• If the message ALSO contains any dataset/data terms (e.g., EEG, fMRI, BIDS, NWB, hippocampus, rat, dataset, download, license),\n"
+        "• If the message ALSO contains any dataset/data terms (e.g., EEG, fMRI, BIDS, NWB, hippocampus, rat, dataset, download, license), "
         "  DO NOT include 'greeting'. Prefer data-related intents instead.\n"
         "• Typos/elongations still count as greetings (hellow/helo/heyyy/hiii). If message is ONLY that, return ['greeting'].\n"
         "• If unsure and there is any data-related token, prefer data_discovery.\n"
@@ -170,25 +195,13 @@ async def call_gemini_detect_intents(query: str, history: List[str]) -> List[str
         f"Context:\n{ctx}\n"
         f"Query: {query}\n"
     )
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.0,
-            "maxOutputTokens": LLM_TOKEN_LIMITS["intents"],
-            "responseMimeType": "application/json",
-        },
-    }
-    async with aiohttp.ClientSession() as s:
-        async with s.post(
-            f"{url}?key={os.getenv('GOOGLE_API_KEY')}",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=12),
-        ) as r:
-            r.raise_for_status()
-            data = await r.json()
-    out = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
+    cfg = genai_types.GenerateContentConfig(
+        temperature=0.0,
+        max_output_tokens=LLM_TOKEN_LIMITS["intents"],
+        response_mime_type="application/json",
+    )
+    resp = client.models.generate_content(model=FLASH_LITE_MODEL, contents=[prompt], config=cfg)
+    out = json.loads(resp.text or "{}")
     intents = [i for i in out.get("intents", []) if i in allowed]
     return list(dict.fromkeys(intents or [QueryIntent.DATA_DISCOVERY.value]))[:6]
 
@@ -201,10 +214,11 @@ async def call_gemini_for_final_synthesis(
     previous_text: Optional[str] = None,
 ) -> str:
     """
-    Final rendering with gemini-2.5-flash. Supports continuation when hitting token limits.
-    Produces a tidy, ordered Key Details section with Matched on and Evidence.
+    Final rendering with gemini-2.5-flash. Shows up to 15 datasets per call.
+    Removes 'Relevance' and 'Matched on' sections.
     """
-    _require_api_key()
+    _require_llm_creds()
+    client = _get_genai_client()
 
     extras = []
     if QueryIntent.ACCESS_DOWNLOAD.value in intents:
@@ -218,12 +232,6 @@ async def call_gemini_for_final_synthesis(
     if QueryIntent.INSTITUTION.value in intents:
         extras.append("Highlight the institution/organization and collaborations.")
 
-    evidence_rule = (
-        "- In each item include 'Matched on:' listing exact user tokens that appear in the candidate.\n"
-        "- Add 'Evidence:' with one short quoted snippet (<=12 words) copied from a field that contains a matched token; "
-        "name the field (e.g., title, description, license, format). If no exact token is present, write "
-        "'approximate semantic match' and do not invent details.\n"
-    )
     key_details_spec = (
         "- Under **Key Details**, produce a compact, multi-line bullet list in THIS EXACT ORDER if values exist:\n"
         "  - Species: ...\n"
@@ -246,23 +254,18 @@ async def call_gemini_for_final_synthesis(
 
     base_prompt = (
         "You are a neuroscience data expert helping researchers find and understand datasets.\n"
-        "Use the raw candidate objects below; fields may appear at the top level, inside "
-        "`metadata`, `_source`, or `detailed_info`.\n"
+        "Use the raw candidate objects below; fields may appear at the top level, inside `metadata`, `_source`, or `detailed_info`.\n"
         "RULES:\n"
-        "- Show up to 20 datasets without truncation.\n"
+        "- Show up to 15 datasets without truncation mid-item.\n"
         "- Only mention fields that actually exist.\n"
         "- If few exact matches exist, include closely related datasets.\n"
-        "- Do NOT cut off mid-item.\n"
-        "- Never claim lack of memory; continue the list naturally if asked.\n"
-        f"{evidence_rule}{key_details_spec}{extra_rules}\n\n"
+        "- Never claim lack of memory; continue the list naturally if asked for 'more'.\n"
+        f"{key_details_spec}{extra_rules}\n\n"
         "OUTPUT FORMAT:\n"
         "### 🔬 Neuroscience Datasets Found\n\n"
         "####  {number}. {Title}\n"
         "- **Source:** {datasource_name or institution}\n"
         "- **Description:** {1-2 sentences}\n"
-        "- **Relevance:** why it matches\n"
-        "- **Matched on:** tokens\n"
-        "- **Evidence:** \"snippet\" — field\n"
         "- **Key Details:**\n"
         "  - Species: ...\n"
         "  - Brain Regions: ...\n"
@@ -278,63 +281,27 @@ async def call_gemini_for_final_synthesis(
         f"Start numbering at {start_number} and continue sequentially. Do not repeat earlier items.\n"
     )
 
-    def _mk_payload(prompt_text: str):
-        return {
-            "contents": [{"parts": [{"text": prompt_text}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": LLM_TOKEN_LIMITS["synthesis"]},
-        }
+    def _cfg():
+        return genai_types.GenerateContentConfig(
+            temperature=0.1,
+            max_output_tokens=LLM_TOKEN_LIMITS["synthesis"],
+        )
 
-    api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     prompt = (
         f"{base_prompt}\nUser Query: {json.dumps(query, ensure_ascii=False)}\n"
         f"Intents: {json.dumps(intents)}\n\nRaw candidates (JSON):\n"
         f"{json.dumps(search_results, ensure_ascii=False)}"
     )
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"{api_url}?key={os.getenv('GOOGLE_API_KEY')}",
-            json=_mk_payload(prompt),
-            headers={"Content-Type": "application/json"},
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-        text = (
-            data.get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "")
-        ).strip()
-        finish = data.get("candidates", [{}])[0].get("finishReason")
 
-        conts = 0
-        while finish == "MAX_TOKENS" and conts < 2:
-            cont_prompt = (
-                "Continue the list from where you stopped. Do not repeat items.\n\n"
-                f"Previous partial output:\n<<<\n{previous_text or text}\n>>>\n"
-            )
-            async with session.post(
-                f"{api_url}?key={os.getenv('GOOGLE_API_KEY')}",
-                json=_mk_payload(cont_prompt),
-                headers={"Content-Type": "application/json"},
-            ) as resp2:
-                resp2.raise_for_status()
-                data2 = await resp2.json()
-                more = (
-                    data2.get("candidates", [{}])[0]
-                    .get("content", {})
-                    .get("parts", [{}])[0]
-                    .get("text", "")
-                ).strip()
-                text = f"{text.rstrip()}\n\n{more}"
-                finish = data2.get("candidates", [{}])[0].get("finishReason")
-                previous_text = text
-                conts += 1
-
-        if not text:
-            raise RuntimeError("Gemini synthesis returned empty text.")
-        return text
+    resp = client.models.generate_content(model=FLASH_MODEL, contents=[prompt], config=_cfg())
+    text = (resp.text or "").strip()
+    # Best-effort continuation if the model stopped early; SDK may not expose finish_reason consistently.
+    if not text:
+        raise RuntimeError("Gemini synthesis returned empty text.")
+    return text
 
 
+# --- Agent state and search/fuse/response pipeline ---------------------------
 class AgentState(TypedDict):
     session_id: str
     query: str
@@ -350,7 +317,8 @@ class AgentState(TypedDict):
 
 
 class KSSearchAgent:
-    async def run(self, query: str, keywords: List[str], want: int = 60) -> dict:
+    async def run(self, query: str, keywords: List[str], want: int = 45) -> dict:
+        # We’ll gather more than one page to fill several "more" requests; first page is capped to 15 later.
         try:
             general = general_search(query, top_k=min(want, 50), enrich_details=True).get("combined_results", [])
         except Exception as e:
@@ -361,7 +329,8 @@ class KSSearchAgent:
         except Exception as e:
             print(f"Fuzzy config search error: {e}")
             fuzzy = []
-        return {"combined_results": (general + fuzzy)[: max(want, 20)]}
+        # return up to 'want' combined (dedupe can be added if needed)
+        return {"combined_results": (general + fuzzy)[: max(want, 15)]}
 
 
 class VectorSearchAgent:
@@ -382,7 +351,7 @@ class VectorSearchAgent:
 
 async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     print("--- Node: Keywords, Rewrite, Intents ---")
-    # First, detect intents on the raw message to catch pure greetings
+    # Detect intents on the raw input first (to catch pure greeting)
     intents0 = await call_gemini_detect_intents(state["query"], state.get("history", []))
     if intents0 == [QueryIntent.GREETING.value]:
         print("Pure greeting detected; skipping search.")
@@ -390,7 +359,7 @@ async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
 
     effective = await call_gemini_rewrite_with_history(state["query"], state.get("history", []))
     keywords = await call_gemini_for_keywords(effective)
-    # Re-evaluate intents on the effective query (typically excludes greeting)
+    # Re-evaluate intents after rewrite (usually drops greeting if mixed)
     intents = await call_gemini_detect_intents(effective, state.get("history", []))
     print(f"  -> Effective query: {effective}")
     print(f"  -> Keywords: {keywords}")
@@ -400,11 +369,10 @@ async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
 
 async def execute_search(state: AgentState) -> Dict[str, Any]:
     print("--- Node: Search Execution ---")
-    intents = state.get("intents", [])
-    if set(intents) == {QueryIntent.GREETING.value}:
+    if set(state.get("intents", [])) == {QueryIntent.GREETING.value}:
         print("Pure greeting; skipping search.")
         return {"ks_results": [], "vector_results": []}
-    want_pool = 80
+    want_pool = 60  # collect enough for several pages (15 per page)
     ks_agent = KSSearchAgent()
     ks_results_data = await ks_agent.run(state["effective_query"], state.get("keywords", []), want=want_pool)
     all_ks_results = ks_results_data.get("combined_results", [])
@@ -432,7 +400,7 @@ def fuse_results(state: AgentState) -> AgentState:
                 combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
     all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
     print(f"Results summary: KS={len(ks_results)}, Vector={len(vector_results)}, Combined={len(all_sorted)}")
-    page_size = 20
+    page_size = 15
     return {**state, "all_results": all_sorted, "final_results": all_sorted[:page_size]}
 
 
@@ -495,7 +463,7 @@ class NeuroscienceAssistant:
                 all_results = mem.get("all_results", [])
                 if not all_results:
                     return "There are no earlier results to continue. Ask me for a dataset (e.g., 'human EEG BIDS')."
-                page_size = more_count or mem.get("page_size", 20)
+                page_size = more_count or mem.get("page_size", 15)
                 page = mem.get("page", 1) + 1
                 start = (page - 1) * page_size
                 batch = all_results[start:start + page_size]
@@ -539,7 +507,7 @@ class NeuroscienceAssistant:
             self.session_memory[session_id] = {
                 "all_results": final_state.get("all_results", []),
                 "page": 1,
-                "page_size": 20,
+                "page_size": 15,
                 "effective_query": final_state.get("effective_query", initial_state["query"]),
                 "keywords": final_state.get("keywords", []),
                 "intents": final_state.get("intents", [QueryIntent.DATA_DISCOVERY.value]),
