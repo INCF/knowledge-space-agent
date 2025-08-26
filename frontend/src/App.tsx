@@ -23,6 +23,12 @@ const App: React.FC = () => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Clear any stored chat history on app load/refresh
+    localStorage.removeItem('chatMessages');
+    localStorage.removeItem('chatHistory');
+    sessionStorage.removeItem('chatMessages');
+    sessionStorage.removeItem('chatHistory');
+    
     // Add welcome message
     const welcomeMessage: Message = {
       id: 'welcome',
