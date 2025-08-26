@@ -2,15 +2,16 @@
 import os
 import re
 import json
+import asyncio
 from enum import Enum
 from typing import Dict, List, Optional, TypedDict, Any
 
 from langgraph.graph import StateGraph, END
 
-from ks_search_tool import general_search, global_fuzzy_keyword_search
+from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import Retriever
 
-# --- LLM (Gemini) client setup ----------------------------------------------
+#  LLM (Gemini) client setup 
 try:
     from google import genai
     from google.genai import types as genai_types
@@ -28,13 +29,30 @@ def _use_vertex() -> bool:
     return bool(os.getenv("GCP_PROJECT_ID"))
 
 
-def _require_llm_creds():
+def _ensure_google_creds_for_vertex() -> None:
+    """
+    Prefer Application Default Credentials (ADC) on GCE:
+      - If GOOGLE_APPLICATION_CREDENTIALS is already set
+      - Else, if backend/service-account.json exists, use it.
+      - Else, do nothing and let ADC from the metadata server be used.
+    """
+    if not _use_vertex():
+        return
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        return
+    sa_path = os.path.join(os.path.dirname(__file__), "service-account.json")
+    if os.path.exists(sa_path):
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = sa_path
+
+
+def _require_llm_creds() -> None:
+    """
+    Validate that we have the minimum inputs for the selected mode.
+    """
     if _use_vertex():
         if not os.getenv("GCP_PROJECT_ID"):
             raise RuntimeError("GCP_PROJECT_ID must be set for Vertex mode.")
-        # Ensure service account path is set relative to this file (if not provided)
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.join(os.path.dirname(__file__), "service-account.json")
-
+        _ensure_google_creds_for_vertex()
     else:
         if not os.getenv("GOOGLE_API_KEY"):
             raise RuntimeError("GOOGLE_API_KEY must be set for API-key mode.")
@@ -44,18 +62,21 @@ _GENAI_CLIENT = None
 
 
 def _get_genai_client():
+    """
+    Build a google.genai client for either Vertex (ADC or creds file) or API-key mode.
+    """
     global _GENAI_CLIENT
     if _GENAI_CLIENT is not None:
         return _GENAI_CLIENT
+
     if _use_vertex():
         project = os.getenv("GCP_PROJECT_ID")
         location = os.getenv("GCP_REGION") or "europe-west4"
-        if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-            sa_path = os.path.join(os.path.dirname(__file__), "service-account.json")
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = sa_path
+        _ensure_google_creds_for_vertex()
         _GENAI_CLIENT = genai.Client(vertexai=True, project=project, location=location)
     else:
         _GENAI_CLIENT = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
     return _GENAI_CLIENT
 
 
@@ -63,7 +84,7 @@ FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
 FLASH_LITE_MODEL = os.getenv("GEMINI_FLASH_LITE_MODEL", "gemini-2.5-flash-lite")
 
 
-# --- Query intent/types ------------------------------------------------------
+# Query intent/types 
 class QueryIntent(Enum):
     DATA_DISCOVERY = "data_discovery"
     ACCESS_DOWNLOAD = "access_download"
@@ -92,7 +113,7 @@ def _is_more_query(text: str) -> Optional[int]:
     return int(m.group(1)) if m else (None if any(w in t for w in ["more", "next", "continue"]) else None)
 
 
-# --- LLM calls using google.genai -------------------------------------------
+#  LLM calls using google.genai 
 async def call_gemini_for_keywords(query: str) -> List[str]:
     """
     Extract raw keywords/phrases from the user's text using the LLM only.
@@ -206,6 +227,8 @@ async def call_gemini_detect_intents(query: str, history: List[str]) -> List[str
     return list(dict.fromkeys(intents or [QueryIntent.DATA_DISCOVERY.value]))[:6]
 
 
+
+
 async def call_gemini_for_final_synthesis(
     query: str,
     search_results: List[dict],
@@ -213,10 +236,7 @@ async def call_gemini_for_final_synthesis(
     start_number: int = 1,
     previous_text: Optional[str] = None,
 ) -> str:
-    """
-    Final rendering with gemini-2.5-flash. Shows up to 15 datasets per call.
-    Removes 'Relevance' and 'Matched on' sections.
-    """
+
     _require_llm_creds()
     client = _get_genai_client()
 
@@ -249,6 +269,7 @@ async def call_gemini_for_final_synthesis(
         "- For Authors, show up to 5 names; if more, append 'and {N} more'.\n"
         "- Never print empty labels; omit fields that are missing.\n"
         "- Preserve exact tokens for licenses and formats (PDDL, CC0, BIDS, NWB).\n"
+        "- Include a **Relevance** section that explains specifically how this dataset matches the user's query.\n"
     )
     extra_rules = ("\n" + "\n".join(extras)) if extras else ""
 
@@ -266,17 +287,8 @@ async def call_gemini_for_final_synthesis(
         "####  {number}. {Title}\n"
         "- **Source:** {datasource_name or institution}\n"
         "- **Description:** {1-2 sentences}\n"
-        "- **Key Details:**\n"
-        "  - Species: ...\n"
-        "  - Brain Regions: ...\n"
-        "  - Technique or Modality: ...\n"
-        "  - Data Formats: ...\n"
-        "  - License: ...\n"
-        "  - Subjects/Samples: ...\n"
-        "  - Tasks/Conditions: ...\n"
-        "  - Recording Specs: ...\n"
-        "  - Authors: ...\n"
-        "  - Year: ...\n"
+        "- **Key Details:** (follow the exact order and format specified above)\n"
+        "- **Relevance:** {Explain how this dataset matches the user's query}\n"
         "- **🔗 Access:** [{source name}]({primary_link})\n\n"
         f"Start numbering at {start_number} and continue sequentially. Do not repeat earlier items.\n"
     )
@@ -295,13 +307,12 @@ async def call_gemini_for_final_synthesis(
 
     resp = client.models.generate_content(model=FLASH_MODEL, contents=[prompt], config=_cfg())
     text = (resp.text or "").strip()
-    # Best-effort continuation if the model stopped early; SDK may not expose finish_reason consistently.
     if not text:
         raise RuntimeError("Gemini synthesis returned empty text.")
     return text
 
 
-# --- Agent state and search/fuse/response pipeline ---------------------------
+#  Agent state and search/fuse/response pipeline 
 class AgentState(TypedDict):
     session_id: str
     query: str
@@ -318,18 +329,24 @@ class AgentState(TypedDict):
 
 class KSSearchAgent:
     async def run(self, query: str, keywords: List[str], want: int = 45) -> dict:
-        # We’ll gather more than one page to fill several "more" requests; first page is capped to 15 later.
         try:
-            general = general_search(query, top_k=min(want, 50), enrich_details=True).get("combined_results", [])
+            print("  -> Using parallel enrichment in KS search")
+            general = await general_search_async(query, top_k=min(want, 50), enrich_details=True)
+            general = general.get("combined_results", [])
         except Exception as e:
-            print(f"General search error: {e}")
-            general = []
+            print(f"Async general search error, falling back to sync: {e}")
+            try:
+                general = general_search(query, top_k=min(want, 50), enrich_details=True).get("combined_results", [])
+            except Exception as e2:
+                print(f"Sync general search error: {e2}")
+                general = []
         try:
+            print(f"  -> Running fuzzy search with keywords: {keywords}")
             fuzzy = global_fuzzy_keyword_search(keywords, top_k=min(want, 50))
+            print(f"  -> Fuzzy search returned {len(fuzzy)} results")
         except Exception as e:
             print(f"Fuzzy config search error: {e}")
             fuzzy = []
-        # return up to 'want' combined (dedupe can be added if needed)
         return {"combined_results": (general + fuzzy)[: max(want, 15)]}
 
 
@@ -338,11 +355,17 @@ class VectorSearchAgent:
         self.retriever = Retriever()
         self.is_enabled = self.retriever.is_enabled
 
-    def run(self, query: str, want: int, context: Optional[Dict] = None) -> List[dict]:
+    async def run(self, query: str, want: int, context: Optional[Dict] = None) -> List[dict]:
         if not self.is_enabled:
             return []
         try:
-            results = self.retriever.search(query=query, top_k=min(want, 50), context={"raw": True})
+            # Run the synchronous search in a thread to make it async
+            results = await asyncio.to_thread(
+                self.retriever.search, 
+                query=query, 
+                top_k=min(want, 50), 
+                context={"raw": True}
+            )
             return [item.__dict__ if hasattr(item, "__dict__") else item for item in results]
         except Exception as e:
             print(f"Vector search error: {e}")
@@ -351,7 +374,7 @@ class VectorSearchAgent:
 
 async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     print("--- Node: Keywords, Rewrite, Intents ---")
-    # Detect intents on the raw input first (to catch pure greeting)
+    # Detect intents on the raw input first 
     intents0 = await call_gemini_detect_intents(state["query"], state.get("history", []))
     if intents0 == [QueryIntent.GREETING.value]:
         print("Pure greeting detected; skipping search.")
@@ -367,17 +390,37 @@ async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     return {**state, "effective_query": effective, "keywords": keywords, "intents": intents}
 
 
+# Global vector agent instance - initialized once per process
+_global_vector_agent = None
+
+def get_vector_agent():
+    global _global_vector_agent
+    if _global_vector_agent is None:
+        _global_vector_agent = VectorSearchAgent()
+    return _global_vector_agent
+
 async def execute_search(state: AgentState) -> Dict[str, Any]:
     print("--- Node: Search Execution ---")
     if set(state.get("intents", [])) == {QueryIntent.GREETING.value}:
         print("Pure greeting; skipping search.")
         return {"ks_results": [], "vector_results": []}
     want_pool = 60  # collect enough for several pages (15 per page)
+    
+    # Run both searches simultaneously using shared vector agent
     ks_agent = KSSearchAgent()
-    ks_results_data = await ks_agent.run(state["effective_query"], state.get("keywords", []), want=want_pool)
+    vec_agent = get_vector_agent()  # Reuse the same instance
+    
+    ks_task = asyncio.create_task(
+        ks_agent.run(state["effective_query"], state.get("keywords", []), want=want_pool)
+    )
+    vec_task = asyncio.create_task(
+        vec_agent.run(query=state["effective_query"], want=want_pool, context={"raw": True})
+    )
+    
+    # Wait for both searches to complete
+    ks_results_data, vec_results = await asyncio.gather(ks_task, vec_task)
     all_ks_results = ks_results_data.get("combined_results", [])
-    vec_agent = VectorSearchAgent()
-    vec_results = vec_agent.run(query=state["effective_query"], want=want_pool, context={"raw": True})
+    
     print(f"Search completed: KS results={len(all_ks_results)}, Vector results={len(vec_results)}")
     return {"ks_results": all_ks_results, "vector_results": vec_results}
 
@@ -412,9 +455,9 @@ async def generate_final_response(state: AgentState) -> AgentState:
             "Hey! I can help you find neuroscience datasets.\n\n"
             "Try examples:\n"
             "- rat electrophysiology in hippocampus\n"
-            "- human EEG visual stimulus, BIDS format\n"
+            "- human EEG visual stimulus\n"
             "- fMRI datasets with CC0 or PDDL license\n"
-            "- datasets from EBRAINS about DWI\n"
+            "- datasets from EBRAINS \n"
         )
         return {**state, "final_response": response}
     raw_results = state.get("final_results", [])
@@ -450,6 +493,7 @@ class NeuroscienceAssistant:
         self.chat_history.pop(session_id, None)
         self.session_memory.pop(session_id, None)
 
+
     async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
         try:
             if reset:
@@ -468,10 +512,11 @@ class NeuroscienceAssistant:
                 start = (page - 1) * page_size
                 batch = all_results[start:start + page_size]
                 if not batch:
-                    return "You’ve reached the end of the results. Try refining the query."
+                    return "You've reached the end of the results. Try refining the query."
                 intents = mem.get("intents", [QueryIntent.DATA_DISCOVERY.value])
                 effective_query = mem.get("effective_query", "")
                 prev_text = mem.get("last_text", "")
+                
                 text = await call_gemini_for_final_synthesis(
                     effective_query, batch, intents, start_number=start + 1, previous_text=prev_text
                 )
