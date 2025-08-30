@@ -1,16 +1,20 @@
 
 import json
 import uuid
+import os
 from pathlib import Path
 from typing import Dict, Any, List
 
+from dotenv import load_dotenv
 from google.cloud import bigquery
 
+# Load environment variables
+load_dotenv()
 
-PROJECT_ID  = "knowledgespace-217609"
-DATASET_ID  = "ks_metadata"
-TABLE_ID    = "docstore"
-LOCATION    = "EU"
+PROJECT_ID  = os.getenv('GCP_PROJECT_ID')
+DATASET_ID  = os.getenv('BQ_DATASET_ID')
+TABLE_ID    = os.getenv('BQ_TABLE_ID')
+LOCATION    = os.getenv('BQ_LOCATION')
 
 INPUT_JSONL = Path("all_chunks.jsonl")  
 
