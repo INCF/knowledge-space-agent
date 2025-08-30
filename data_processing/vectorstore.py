@@ -1,150 +1,162 @@
 import json
-from pathlib import Path
-from typing import List, Sequence
+import time
+import random
 import os
-from dotenv import load_dotenv
+from pathlib import Path
+from typing import List
 
+from dotenv import load_dotenv
 from tqdm import tqdm
+from google.api_core import exceptions
 from google.cloud import aiplatform, aiplatform_v1
 from google.cloud.aiplatform_v1.types import IndexDatapoint
 
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
 
-# CONFIG (from .env or defaults)
-PROJECT_ID         = os.environ.get("GCP_PROJECT_ID", "knowledgespace-217609").replace('"','')
-REGION             = os.environ.get("GCP_REGION", "europe-north1").replace('"','')
-PROJECT_NUMBER     = os.environ.get("GCP_PROJECT_NUMBER", "452527985942").replace('"','')
-LOCAL_EMBEDDINGS_PATH = Path(os.environ.get("LOCAL_EMBEDDINGS_PATH", "data_processing/embeddings.jsonl").replace('"',''))
-INDEX_DISPLAY_NAME = os.environ.get("INDEX_DISPLAY_NAME", "ks-chunks-index-nomic-768").replace('"','')
-INDEX_ENDPOINT_ID  = os.environ.get("INDEX_ENDPOINT_ID", "6943442317684506624").replace('"','')
-DEPLOYED_INDEX_ID  = os.environ.get("DEPLOYED_INDEX_ID", "deployed_ks_chunks_index_nomic_768").replace('"','')
-EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", 768))
-DISTANCE_MEASURE     = os.environ.get("DISTANCE_MEASURE", "DOT_PRODUCT_DISTANCE").replace('"','')
-UPSERT_BATCH_SIZE    = int(os.environ.get("UPSERT_BATCH_SIZE", 100))
-API_ENDPOINT = f"{PROJECT_NUMBER}.{REGION}-{PROJECT_ID}.vdb.vertexai.goog"
+# CONFIG
 
+PROJECT_ID         = os.getenv('GCP_PROJECT_ID')
+PROJECT_NUMBER     = os.getenv('GCP_PROJECT_NUMBER')
+REGION             = os.getenv('GCP_REGION')
 
-#INDEX CREATE / DEPLOY 
-def get_or_create_streaming_index():
-    print(f"Checking for existing index named '{INDEX_DISPLAY_NAME}'...")
+# These values should be set when index and endpoint already exist
+INDEX_DISPLAY_NAME = "kschunks-index-nomic-768"
+INDEX_ENDPOINT_ID  = os.getenv('INDEX_ENDPOINT_ID')
+DEPLOYED_INDEX_ID  = os.getenv('DEPLOYED_INDEX_ID')
+
+LOCAL_EMBEDDINGS_PATH = Path("embeddings1.jsonl")
+UPSERT_BATCH_SIZE     = 1000
+
+CHECKPOINT_FILE = Path(".upsert_ckpt.txt")
+MAX_RETRIES     = 8
+BACKOFF_BASE    = 2.0  
+
+#  INDEX RETRIEVAL
+def get_existing_index():
+    """Get the existing index. Index and endpoint must already be created and deployed."""
+    print(f"Looking for existing index named '{INDEX_DISPLAY_NAME}'...")
     indexes = aiplatform.MatchingEngineIndex.list(
         filter=f'display_name="{INDEX_DISPLAY_NAME}"'
     )
-    if indexes:
-        idx = indexes[0]
-        print(f"✅ Found existing index: {idx.resource_name}")
-        return idx
-
-    print("No existing index found. Creating a new streaming index...")
-    idx = aiplatform.MatchingEngineIndex.create_brute_force_index(
-        display_name=INDEX_DISPLAY_NAME,
-        dimensions=EMBEDDING_DIMENSIONS,
-        distance_measure_type=DISTANCE_MEASURE,
-        index_update_method="STREAM_UPDATE",
-    )
-    print(f"Index created: {idx.resource_name}")
+    if not indexes:
+        raise RuntimeError(f"Index '{INDEX_DISPLAY_NAME}' not found. Please create and deploy the index first.")
+    
+    idx = indexes[0]
+    print(f"Found existing index: {idx.resource_name}")
     return idx
 
 
-def _get_deployed_list(endpoint_obj):
-    dl = getattr(endpoint_obj, "deployed_indexes", None)
-    if dl is None:
-        dl = endpoint_obj.gca_resource.deployed_indexes
-    return dl
-
-
-def deploy_index_if_needed(endpoint_obj, index_obj):
-    """Deploy index to endpoint if not already deployed."""
-    deployed_list = _get_deployed_list(endpoint_obj)
+def verify_index_deployment(endpoint_obj, index_obj):
+    """Verify that the index is properly deployed to the endpoint."""
+    deployed_list = getattr(endpoint_obj, "deployed_indexes", None)
+    if deployed_list is None:
+        deployed_list = endpoint_obj.gca_resource.deployed_indexes
 
     for di in deployed_list:
         if di.index == index_obj.resource_name or di.id == DEPLOYED_INDEX_ID:
-            print(f"Index already deployed (id={di.id}).")
+            print(f"Index is deployed (id={di.id}).")
+            return True
+    
+    raise RuntimeError(f"Index is not deployed to endpoint. Please deploy the index first.")
+
+
+#  UPSERT HELPER
+def _safe_upsert(index_obj, batch, batch_num):
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            index_obj.upsert_datapoints(datapoints=batch)
             return
+        except (exceptions.ServiceUnavailable,
+                exceptions.DeadlineExceeded,
+                exceptions.InternalServerError) as e:
+            wait = BACKOFF_BASE ** attempt + random.uniform(0, 1.5)
+            print(f"\nWARNING: Batch {batch_num} failed ({e.__class__.__name__}). "
+                  f"Retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+            time.sleep(wait)
+    raise RuntimeError(f"Upsert batch {batch_num} failed after {MAX_RETRIES} retries.")
 
-    print("Deploying index to endpoint…")
-    op = endpoint_obj.deploy_index(index=index_obj, deployed_index_id=DEPLOYED_INDEX_ID)
-    op.result()  # wait
-    print(" Deployment completed.")
+
+def _load_checkpoint() -> int:
+    if CHECKPOINT_FILE.exists():
+        try:
+            return int(CHECKPOINT_FILE.read_text().strip())
+        except Exception:
+            pass
+    return 0
 
 
-# UPSERT
+def _save_checkpoint(n_processed: int):
+    CHECKPOINT_FILE.write_text(str(n_processed))
+
+
 def stream_upload_vectors(index_obj):
-    print(f"Reading vectors from '{LOCAL_EMBEDDINGS_PATH}'...")
     with LOCAL_EMBEDDINGS_PATH.open("r", encoding="utf-8") as f:
-        total = sum(1 for _ in f)
+        total_lines = sum(1 for ln in f if ln.strip())
+
+    start_line = _load_checkpoint()
+    print(f"Total lines: {total_lines:,}. Resuming from line {start_line:,}.")
 
     batch: List[IndexDatapoint] = []
-    with LOCAL_EMBEDDINGS_PATH.open("r", encoding="utf-8") as f:
-        for line in tqdm(f, total=total, desc="Upserting"):
-            line = line.strip()
-            if not line:
+    processed = start_line
+    batch_num = 0
+
+    with LOCAL_EMBEDDINGS_PATH.open("r", encoding="utf-8") as f, \
+         tqdm(total=total_lines, initial=start_line, desc="Upserting", unit="dp") as pbar:
+
+        for i, line in enumerate(f):
+            if not line.strip():
                 continue
+            if i < start_line:
+                continue
+
             rec = json.loads(line)
             dp = IndexDatapoint(
                 datapoint_id=rec["id"],
                 feature_vector=rec["embedding"],
             )
             batch.append(dp)
-            if len(batch) == UPSERT_BATCH_SIZE:
-                index_obj.upsert_datapoints(datapoints=batch)
-                batch = []
+            processed += 1
 
-    if batch:
-        index_obj.upsert_datapoints(datapoints=batch)
+            if len(batch) == UPSERT_BATCH_SIZE:
+                batch_num += 1
+                _safe_upsert(index_obj, batch, batch_num)
+                batch.clear()
+                _save_checkpoint(processed)
+                pbar.update(UPSERT_BATCH_SIZE)
+
+        if batch:
+            batch_num += 1
+            _safe_upsert(index_obj, batch, batch_num)
+            _save_checkpoint(processed)
+            pbar.update(len(batch))
 
     print("All vectors upserted.")
+    try:
+        CHECKPOINT_FILE.unlink()
+    except OSError:
+        pass
 
 
-def build_match_client() -> aiplatform_v1.MatchServiceClient:
-    return aiplatform_v1.MatchServiceClient(
-        client_options={"api_endpoint": API_ENDPOINT}
-    )
-
-
-def find_neighbors(
-    feature_vector: Sequence[float],
-    neighbor_count: int = 10,
-    return_full_datapoint: bool = False,
-):
-    client = build_match_client()
-
-    query_dp = IndexDatapoint(feature_vector=feature_vector)
-    query = aiplatform_v1.FindNeighborsRequest.Query(
-        datapoint=query_dp,
-        neighbor_count=neighbor_count,
-    )
-    request = aiplatform_v1.FindNeighborsRequest(
-        index_endpoint=f"projects/{PROJECT_NUMBER}/locations/{REGION}/indexEndpoints/{INDEX_ENDPOINT_ID}",
-        deployed_index_id=DEPLOYED_INDEX_ID,
-        queries=[query],
-        return_full_datapoint=return_full_datapoint,
-    )
-    response = client.find_neighbors(request)
-    return response.nearest_neighbors
-
-
-
-def main():
+#  MAIN
+    """Upload vectors to existing deployed index."""
     aiplatform.init(project=PROJECT_ID, location=REGION)
-
-    idx = get_or_create_streaming_index()
-
+    
+    # Get existing index and endpoint
+    idx = get_existing_index()
+    
     endpoint_name = (
         f"projects/{PROJECT_ID}/locations/{REGION}/indexEndpoints/{INDEX_ENDPOINT_ID}"
     )
     endpoint = aiplatform.MatchingEngineIndexEndpoint(
         index_endpoint_name=endpoint_name
     )
-
-    deploy_index_if_needed(endpoint, idx)
-    # Comment the next line if you already upserted once.
+    
+    # Verify index is deployed
+    verify_index_deployment(endpoint, idx)
+    
+    # Upload vectors
     stream_upload_vectors(idx)
-
-    # Example search 
-    demo_vec = [0.0] * EMBEDDING_DIMENSIONS
-    print(find_neighbors(demo_vec, 5))
 
 
 if __name__ == "__main__":
