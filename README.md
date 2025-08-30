@@ -123,6 +123,32 @@ This repository provides a set of Python scripts and modules to ingest, clean, a
 - **Per-Datasource Preprocessing**: Each data source has its own preprocessing script (e.g. `scr_017041_dandi.py`, `scr_006274_neuroelectro_ephys.py`) saved in `gcs://ks_datasets/preprocessed_data/`.
 - **Extensible Configs**: Easily add new datasources by updating GCS paths and field mappings.
 
+# Updating Vector Store with New Datasets
+
+To update the vector store with new datasets from Knowledge Space, run:
+
+```bash
+python data_processing/full_pipeline.py
+```
+
+## Pipeline Process
+
+The script performs a complete data processing workflow:
+
+1. **Scrapes all data** - Runs preprocessing scripts to collect data from Knowledge Space datasources
+2. **Generates hashes** - Creates unique hash-based datapoint IDs for all chunks
+3. **Matches BigQuery datapoint IDs** - Queries existing data to find what's already processed
+4. **Selects new/unique data** - Identifies only new chunks that need processing
+5. **Creates embeddings** - Generates vector embeddings for new chunks only
+6. **Upserts to vector store** - Uploads new embeddings to Vertex AI Matching Engine
+7. **Inserts to BigQuery** - Stores new chunk metadata and content
+
+This completes the update process with only new data, avoiding reprocessing existing content.
+
+## Environment Configuration
+
+For required environment variables, see `.env.template` in the project root.
+
 ## Additional Notes
 
 - **Environment**: Make sure `.env` is present before starting the backend.
