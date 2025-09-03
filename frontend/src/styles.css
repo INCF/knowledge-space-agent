@@ -17,8 +17,10 @@ html, body {
 
 #root {
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile */
     width: 100vw;
     min-height: 100vh;
+    min-height: 100dvh;
     min-width: 100vw;
     display: flex;
     flex-direction: column;
@@ -26,8 +28,10 @@ html, body {
 
 .app-container {
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile */
     width: 100vw;
     min-height: 100vh;
+    min-height: 100dvh;
     min-width: 100vw;
     display: flex;
     flex-direction: column;
@@ -36,8 +40,10 @@ html, body {
 
 .main-layout {
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile */
     width: 100vw;
     min-height: 100vh;
+    min-height: 100dvh;
     min-width: 100vw;
     display: flex;
     flex-direction: column;
@@ -425,6 +431,9 @@ html, body {
     padding: 0;
     flex-shrink: 0;
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
 }
 
 .input-container {
@@ -653,6 +662,7 @@ html, body {
     
     .messages-wrapper {
         padding: 20px 16px;
+        padding-bottom: 120px; /* Extra padding for mobile input */
     }
     
     .message-bubble {
@@ -661,6 +671,7 @@ html, body {
     
     .input-container {
         padding: 16px 20px;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     }
     
     .header-actions {
@@ -673,6 +684,11 @@ html, body {
     
     .status-text {
         display: none;
+    }
+    
+    /* Ensure input stays visible on mobile */
+    .input-section {
+        bottom: env(safe-area-inset-bottom, 0px);
     }
 }
 
