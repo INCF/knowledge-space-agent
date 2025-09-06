@@ -5,7 +5,6 @@ services:
       dockerfile: backend/Dockerfile
     env_file:
       - .env
-    # Run via uv so we don't depend on uvicorn CLI being on PATH
     command: >
       sh -lc 'uv run main.py'
     expose:
@@ -16,11 +15,11 @@ services:
     volumes:
       - hf_cache:/cache/hf
     healthcheck:
-      # use python3 (always present) to hit /health
       test: ["CMD", "python3", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read(); sys.exit(0)"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 30s
     networks: [appnet]
     restart: unless-stopped
     logging:
@@ -36,10 +35,34 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "80:80"
+    # no host ports; Caddy will proxy to this container
+    expose:
+      - "80"
     volumes:
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [appnet]
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # change to an email you control for Let's Encrypt notifications
+      - ACME_AGREE=true
+      - EMAIL=${ACME_EMAIL:-swastik.r.900@gmail.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     networks: [appnet]
     restart: unless-stopped
     logging:
@@ -53,3 +76,5 @@ networks:
 
 volumes:
   hf_cache:
+  caddy_data:
+  caddy_config:
