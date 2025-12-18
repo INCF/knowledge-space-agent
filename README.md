@@ -17,7 +17,7 @@ A web application that provides an AI-powered chatbot interface for dataset disc
   - [BigQuery and Vertex AI Configuration](#bigquery-and-vertex-ai-configuration)
 - [Running the Application](#running-the-application)
   - [Backend](#backend-port-8000)
-  - [Frontend](#frontend-port-5000)
+  - [Frontend](#frontend-port-3000)
   - [Docker Setup](#docker-setup)
 - [Data Processing Pipeline](#data-processing-pipeline)
 - [Deployment](#deployment)
@@ -44,6 +44,8 @@ A web application that provides an AI-powered chatbot interface for dataset disc
 git clone https://github.com/INCF/knowledge-space-agent.git
 cd knowledge-space-agent
 ```
+> **Windows users:**  
+> Use **Git Bash** for all commands below. Do not use CMD or PowerShell unless explicitly stated. 
 
 ### 2. Install UV package manager
 
@@ -76,8 +78,15 @@ Create a file named `.env` in the project root based on `.env.template`. You can
 uv venv
 
 # Activate it:
-# On Windows (cmd):
- .venv/bin/activate
+
+# On Windows (Git Bash):
+source .venv/Scripts/activate
+
+# On Windows (CMD):
+.venv\Scripts\activate
+
+# On macOS/Linux:
+source .venv/bin/activate
 
 ```
 
@@ -101,19 +110,18 @@ npm install
 
 ### Google Cloud Setup
 
-1. **Install Google Cloud CLI and Authenticate**:
+Install Google Cloud CLI for your operating system:
 
-   ```bash
-   # Install Google Cloud CLI
-   curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz
-   tar -xf google-cloud-cli-linux-x86_64.tar.gz
-   ./google-cloud-sdk/install.sh
+- **Windows**: https://cloud.google.com/sdk/docs/install#windows
+- **macOS**: https://cloud.google.com/sdk/docs/install#mac
+- **Linux**: https://cloud.google.com/sdk/docs/install#linux
 
-   # Initialize and authenticate
-   gcloud init
-   gcloud auth application-default login
-   ```
+After installation, authenticate:
 
+```bash
+gcloud init
+gcloud auth application-default login
+```
 ### BigQuery and Vertex AI Configuration
 
 Configuration details for BigQuery and Vertex AI services are provided in the `.env.template` file.
@@ -125,12 +133,12 @@ Configuration details for BigQuery and Vertex AI services are provided in the `.
 In one terminal, from the project root with the virtual environment active:
 
 ```bash
-uv run main.py
+uv run python main.py
 ```
 
 - By default, this will start the backend server on port 8000. Adjust configuration if you need a different port.
 
-#### Frontend (port 5000)
+#### Frontend (port 3000)
 
 In another terminal:
 
@@ -139,14 +147,14 @@ cd frontend
 npm start
 ```
 
-- This will start the React development server, typically on http://localhost:5000.
+- This will start the React development server, typically on http://localhost:3000.
 
 ## Accessing the Application
 
 Open your browser to:
 
 ```
-http://localhost:5000
+http://localhost:3000
 ```
 
 The frontend will communicate with the backend at port 8000.
