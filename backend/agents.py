@@ -279,6 +279,8 @@ async def call_gemini_for_final_synthesis(
         "RULES:\n"
         "- Show up to 15 datasets without truncation mid-item.\n"
         "- Only mention fields that actually exist.\n"
+        "- If the Source or Institution is missing, explicitly state 'Unknown Source'.\n"
+        "- Do not use vague terms like 'Undisclosed' or 'N/A'.\n"
         "- If few exact matches exist, include closely related datasets.\n"
         "- Never claim lack of memory; continue the list naturally if asked for 'more'.\n"
         f"{key_details_spec}{extra_rules}\n\n"
