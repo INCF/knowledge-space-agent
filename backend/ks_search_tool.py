@@ -8,6 +8,7 @@ from typing import Dict, Optional, Set, Union, List, Any, Iterable
 import re
 from urllib.parse import urlparse
 from difflib import SequenceMatcher
+from rapidfuzz import fuzz, process
 
 
 def tool(args_schema):
@@ -48,22 +49,28 @@ DATASOURCE_NAME_TO_ID = {
 
 DATASOURCE_ID_TO_NAME = {v: k for k, v in DATASOURCE_NAME_TO_ID.items()}
 
-
 def fuzzy_match(query: str, target: str, threshold: float = 0.8) -> bool:
     if not query or not target:
         return False
-    similarity = SequenceMatcher(None, query.lower(), target.lower()).ratio()
-    return similarity >= threshold
+    # token_sort_ratio handles "brain human" == "human brain" automatically
+    score = fuzz.token_sort_ratio(query.lower(), target.lower())
+    return score >= (threshold * 100)
 
 
 def find_best_matches(query: str, candidates: List[str], threshold: float = 0.8, max_matches: int = 5) -> List[str]:
-    matches = []
-    for candidate in candidates:
-        if fuzzy_match(query, candidate, threshold):
-            similarity = SequenceMatcher(None, query.lower(), candidate.lower()).ratio()
-            matches.append((candidate, similarity))
-    matches.sort(key=lambda x: x[1], reverse=True)
-    return [match[0] for match in matches[:max_matches]]
+    if not query or not candidates:
+        return []
+    
+    # RapidFuzz's process.extract is highly optimized
+    results = process.extract(
+        query.lower(),
+        candidates,
+        scorer=fuzz.token_sort_ratio,
+        limit=max_matches,
+        score_cutoff=threshold * 100
+    )
+    # results format is [(match, score, index), ...]
+    return [res[0] for res in results]
 
 
 def search_across_all_fields(query: str, all_configs: dict, threshold: float = 0.8) -> List[dict]:
@@ -463,3 +470,22 @@ def smart_knowledge_search(
                 results = _perform_search(target_id, q, dict(filters), all_configs)
                 return {"combined_results": results[:top_k]}
     return general_search(q, top_k, enrich_details=True)
+
+def fuzzy_match(query: str, target: str, threshold: float = 0.8) -> bool:
+    if not query or not target:
+        return False
+    # token_sort_ratio handles "brain human" == "human brain"
+    score = fuzz.token_sort_ratio(query.lower(), target.lower())
+    return score >= (threshold * 100)
+
+def find_best_matches(query: str, candidates: List[str], threshold: float = 0.8, max_matches: int = 5) -> List[str]:
+    # process.extract is significantly optimized for list searching
+    results = process.extract(
+        query.lower(), 
+        candidates, 
+        scorer=fuzz.token_sort_ratio, 
+        limit=max_matches,
+        score_cutoff=threshold * 100
+    )
+    # results format: [(match, score, index), ...]
+    return [res[0] for res in results]
