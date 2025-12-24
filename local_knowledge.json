@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1",
+    "title": "fMRI Study of Alzheimer's Disease",
+    "content": "This dataset contains functional MRI scans of 50 patients with early-stage Alzheimer's. The study focuses on hippocampal atrophy and memory loss.",
+    "metadata": {"year": 2023, "modality": "fMRI"}
+  },
+  {
+    "id": "2",
+    "title": "Mouse Brain Atlas - Allen Institute",
+    "content": "A high-resolution map of the mouse brain. Includes gene expression data and cortical mapping layers for spatial transcriptomics.",
+    "metadata": {"year": 2022, "species": "Mouse"}
+  },
+  {
+    "id": "3",
+    "title": "EEG Recordings during Sleep",
+    "content": "Raw EEG data collected during REM sleep cycles. Useful for studying sleep disorders and neural oscillations in humans.",
+    "metadata": {"year": 2024, "modality": "EEG"}
+  },
+  {
+    "id": "4",
+    "title": "Visual Cortex Neuron Spiking",
+    "content": "Single-unit recordings from the visual cortex of macaque monkeys. Data shows spike trains in response to visual stimuli.",
+    "metadata": {"year": 2021, "species": "Macaque"}
+  },
+  {
+    "id": "5",
+    "title": "Drosophila Melanogaster Genetics",
+    "content": "Genetic sequencing data of the fruit fly (Drosophila). Focuses on hereditary traits and mutation patterns.",
+    "metadata": {"year": 2020, "species": "Fruit Fly"}
+  }
+]

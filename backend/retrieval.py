@@ -1,6 +1,7 @@
 # retrieval.py
 import os
 import json
+import re
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -131,6 +132,64 @@ class Retriever:
         )
         rep = torch.nn.functional.normalize(rep, p=2, dim=1)
         return rep[0].cpu().tolist()
+    
+    #Local Hybrid Search Fallback 
+    def _local_search(self, query: str) -> List[RetrievedItem]:
+        """
+        Fallback search mechanism using BM25 keyword matching 
+        on a local JSON file when GCP is disabled.
+        """
+        local_file = "local_knowledge.json"
+        
+        #1. Safety Check: If no local DB exists, return empty (don't crash)
+        if not os.path.exists(local_file):
+            logger.warning(f"Local database {local_file} not found. Returning empty results.")
+            return []
+
+        #2. Load Data
+        try:
+            with open(local_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load local knowledge: {e}")
+            return []
+
+        #3. Normalize Query
+        query_words = set(re.findall(r'\w+', query.lower()))
+        results = []
+
+        #4. Score Documents
+        for item in data:
+            score = 0.0
+            # Combine title and content for broader matching
+            title_text = item.get("title", "")
+            content_text = item.get("content", "")
+            full_text = (title_text + " " + content_text).lower()
+            
+            # Scoring: +1.5 for Title match, +1.0 for Content match
+            for word in query_words:
+                if word in title_text.lower():
+                    score += 1.5
+                if word in content_text.lower():
+                    score += 1.0
+            
+            #5.Convert to Production Object
+            if score > 0:
+                results.append(
+                    RetrievedItem(
+                        id=str(item.get("id")),
+                        title_guess=title_text,
+                        content=content_text,
+                        metadata=item.get("metadata", {}),
+                        primary_link=item.get("link", ""),
+                        other_links=[],
+                        similarity=float(score) # Map score to similarity
+                    )
+                )
+
+        #Sort by Score (High to Low)
+        results.sort(key=lambda x: x.similarity, reverse=True)
+        return results[:5] 
 
     # BigQuery metadata
     def _bq_fetch(self, ids: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -166,10 +225,16 @@ class Retriever:
     ) -> List[RetrievedItem]:
         """
         Executes a similarity search in Matching Engine.
-
         """
-        if not self.is_enabled or not query:
+        if not query:
             return []
+
+        #Local Fallback
+        if not self.is_enabled:
+            logger.info(f"GCP disabled. Using Local Hybrid Search for: '{query}'")
+            return self._local_search(query)
+        
+    
 
         qtext = query if (context or {}).get("raw") else query
 
