@@ -226,7 +226,43 @@ async def call_gemini_detect_intents(query: str, history: List[str]) -> List[str
     intents = [i for i in out.get("intents", []) if i in allowed]
     return list(dict.fromkeys(intents or [QueryIntent.DATA_DISCOVERY.value]))[:6]
 
-
+async def call_gemini_extract_filters(query: str) -> Dict[str, str]:
+    """
+    Extract structured filters like species, modality, or specific datasources.
+    """
+    _require_llm_creds()
+    client = _get_genai_client()
+    
+    # Common filters derived from your datasources_config.json
+    valid_keys = [
+        "species", "brain_region", "license", "authors", 
+        "formats", "technique", "sex", "age"
+    ]
+    
+    prompt = (
+        f"Analyze this neuroscience query: '{query}'\n"
+        f"Extract structured filters if explicitly mentioned. Valid keys: {valid_keys}.\n"
+        "Return STRICT JSON only: { \"filters\": { \"key\": \"value\" } }\n"
+        "Rules:\n"
+        "- If the user asks for 'human' data, set \"species\": \"Homo sapiens\".\n"
+        "- If the user asks for 'mouse' or 'rat', set \"species\": \"Mus musculus\" or \"Rattus norvegicus\".\n"
+        "- Map 'fMRI', 'EEG' to \"technique\" or \"formats\" appropriately.\n"
+        "- If no specific filters are found, return { \"filters\": {} }.\n"
+    )
+    
+    cfg = genai_types.GenerateContentConfig(
+        temperature=0.0,
+        max_output_tokens=256,
+        response_mime_type="application/json",
+    )
+    
+    try:
+        resp = client.models.generate_content(model=FLASH_LITE_MODEL, contents=[prompt], config=cfg)
+        out = json.loads(resp.text or "{}")
+        return out.get("filters", {})
+    except Exception as e:
+        print(f"Filter extraction failed: {e}")
+        return {}
 
 
 async def call_gemini_for_final_synthesis(
@@ -320,35 +356,44 @@ class AgentState(TypedDict):
     keywords: List[str]
     effective_query: str
     intents: List[str]
+    filters: Dict[str, str]  
     ks_results: List[dict]
     vector_results: List[dict]
     final_results: List[dict]
     all_results: List[dict]
     final_response: str
 
-
 class KSSearchAgent:
-    async def run(self, query: str, keywords: List[str], want: int = 45) -> dict:
+    async def run(self, query: str, keywords: List[str], filters: Dict[str, str] = None, want: int = 45) -> dict:
+
+        general = []
+        fuzzy = []
+        
+        enhanced_keywords = keywords.copy() if keywords else []
+
+        if filters:
+            print(f"  -> Applying extracted filters: {filters}")
+            for key, val in filters.items():
+                if val and val not in enhanced_keywords:
+                    enhanced_keywords.append(val)
+
         try:
             print("  -> Using parallel enrichment in KS search")
-            general = await general_search_async(query, top_k=min(want, 50), enrich_details=True)
-            general = general.get("combined_results", [])
+            general_data = await general_search_async(query, top_k=min(want, 50), enrich_details=True)
+            general = general_data.get("combined_results", [])
         except Exception as e:
-            print(f"Async general search error, falling back to sync: {e}")
-            try:
-                general = general_search(query, top_k=min(want, 50), enrich_details=True).get("combined_results", [])
-            except Exception as e2:
-                print(f"Sync general search error: {e2}")
-                general = []
+            print(f"Async general search error: {e}")
+            general = []
         try:
-            print(f"  -> Running fuzzy search with keywords: {keywords}")
-            fuzzy = global_fuzzy_keyword_search(keywords, top_k=min(want, 50))
+            print(f"  -> Running fuzzy search with keywords: {enhanced_keywords}")
+           
+            fuzzy = global_fuzzy_keyword_search(enhanced_keywords, top_k=min(want, 50))
             print(f"  -> Fuzzy search returned {len(fuzzy)} results")
         except Exception as e:
-            print(f"Fuzzy config search error: {e}")
+            print(f"Fuzzy search error: {e}")
             fuzzy = []
-        return {"combined_results": (general + fuzzy)[: max(want, 15)]}
 
+        return {"combined_results": (general + fuzzy)[: max(want, 15)]}
 
 class VectorSearchAgent:
     def __init__(self):
@@ -381,14 +426,26 @@ async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
         return {**state, "effective_query": state["query"], "keywords": [], "intents": intents0}
 
     effective = await call_gemini_rewrite_with_history(state["query"], state.get("history", []))
-    keywords = await call_gemini_for_keywords(effective)
-    # Re-evaluate intents after rewrite (usually drops greeting if mixed)
-    intents = await call_gemini_detect_intents(effective, state.get("history", []))
+    
+    # Run keywords AND filters extraction in parallel for speed
+    keywords_task = call_gemini_for_keywords(effective)
+    intents_task = call_gemini_detect_intents(effective, state.get("history", []))
+    filters_task = call_gemini_extract_filters(effective) # <--- NEW TASK
+    
+    keywords, intents, filters = await asyncio.gather(keywords_task, intents_task, filters_task)
+
     print(f"  -> Effective query: {effective}")
     print(f"  -> Keywords: {keywords}")
-    print(f"  -> Intents: {intents}")
-    return {**state, "effective_query": effective, "keywords": keywords, "intents": intents}
-
+    print(f"  -> Filters: {filters}") # <--- Log it
+    
+    # Add filters to the returned state
+    return {
+        **state, 
+        "effective_query": effective, 
+        "keywords": keywords, 
+        "intents": intents, 
+        "filters": filters
+    }
 
 # Global vector agent instance - initialized once per process
 _global_vector_agent = None
@@ -410,9 +467,14 @@ async def execute_search(state: AgentState) -> Dict[str, Any]:
     ks_agent = KSSearchAgent()
     vec_agent = get_vector_agent()  # Reuse the same instance
     
+  
     ks_task = asyncio.create_task(
-        ks_agent.run(state["effective_query"], state.get("keywords", []), want=want_pool)
-    )
+        ks_agent.run(
+            state["effective_query"], 
+            state.get("keywords", []), 
+            filters=state.get("filters", {}), # <--- Pass filters here
+            want=want_pool
+        ))
     vec_task = asyncio.create_task(
         vec_agent.run(query=state["effective_query"], want=want_pool, context={"raw": True})
     )
