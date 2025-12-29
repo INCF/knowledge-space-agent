@@ -20,6 +20,7 @@ const App: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false); // <-- ADDED
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,6 +74,11 @@ Try asking me something like:
       minute: '2-digit',
       hour12: true 
     });
+  };
+
+  // <-- ADDED FUNCTION
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => !prev);
   };
 
   const sendMessage = async () => {
@@ -138,7 +144,8 @@ Try asking me something like:
   };
 
   return (
-    <div className="app-container">
+    // <-- MODIFIED CLASS -->
+    <div className={`app-container ${isDarkMode ? 'dark' : ''}`}>
       <div className="main-layout">
         {/* Header */}
         <header className="header-section">
@@ -162,6 +169,17 @@ Try asking me something like:
               >
                 <i className="fas fa-broom"></i>
               </button>
+              
+              {/* --- ADDED BUTTON --- */}
+              <button 
+                className="action-btn theme-btn" 
+                onClick={toggleDarkMode}
+                title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                <i className={`fas ${isDarkMode ? 'fa-sun' : 'fa-moon'}`}></i>
+              </button>
+              {/* --- END ADDED BUTTON --- */}
+
             </div>
           </div>
         </header>
