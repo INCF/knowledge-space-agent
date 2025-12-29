@@ -97,26 +97,43 @@ npm install
 
 ```
 
+
+---
+
 ## Database Setup
 
 ### Google Cloud Setup
 
-1. **Install Google Cloud CLI and Authenticate**:
+#### 1. Install Google Cloud CLI and Authenticate
 
-   ```bash
-   # Install Google Cloud CLI
-   curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz
-   tar -xf google-cloud-cli-linux-x86_64.tar.gz
-   ./google-cloud-sdk/install.sh
+```bash
+# Install Google Cloud CLI
+curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz
+tar -xf google-cloud-cli-linux-x86_64.tar.gz
+./google-cloud-sdk/install.sh
 
-   # Initialize and authenticate
-   gcloud init
-   gcloud auth application-default login
-   ```
+# Initialize and authenticate
+gcloud init
+gcloud auth application-default login
+```
+
+---
 
 ### BigQuery and Vertex AI Configuration
 
-Configuration details for BigQuery and Vertex AI services are provided in the `.env.template` file.
+The backend requires specific environment variables to connect to **Google Cloud services**, including **BigQuery** and **Vertex AI**. Configure the following variables in your `.env` file:
+
+| Variable            | Description                          | How to Get It                              |
+| ------------------- | ------------------------------------ | ------------------------------------------ |
+| `GOOGLE_API_KEY`    | API key for Gemini models            | Generate from Google AI Studio             |
+| `GEMINI_USE_VERTEX` | Toggle for Vertex AI vs standard API | Set to `false` for local development       |
+| `GCP_PROJECT_ID`    | Google Cloud Project ID              | Required for Vertex AI and BigQuery        |
+| `BQ_DATASET_ID`     | BigQuery dataset ID                  | Dataset containing KnowledgeSpace metadata |
+| `INDEX_ENDPOINT_ID` | Vertex AI Vector Search endpoint     | ID of deployed vector index for RAG        |
+| `ELASTIC_BASE_URL`  | Elasticsearch base URL               | URL of the text search engine              |
+
+---
+
 
 ## Running the Application
 
