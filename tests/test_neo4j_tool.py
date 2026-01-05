@@ -4,7 +4,6 @@ import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
 from backend.neo4j_search_tool import GraphRetriever
 
 @pytest.fixture
@@ -21,25 +20,19 @@ def test_initialization():
         tool = GraphRetriever()
         assert tool.uri == "bolt://test:7687"
 
-def test_search_execution(mock_driver):
-    """Verifies the search method sends the correct Cypher query."""
-    # 1. Setup the fake return data
+def test_search_ontology(mock_driver):
+    """Verifies the search method returns GraphItem objects."""
     mock_session = MagicMock()
     mock_driver.session.return_value.__enter__.return_value = mock_session
-    
-    # Fake a Neo4j record
     mock_record = MagicMock()
-    mock_record.data.return_value = {"name": "Hippocampus", "definition": "Brain region"}
+    
+    data = {"name": "Hippocampus", "def": "Brain region", "rels": []}
+    mock_record.__getitem__.side_effect = data.__getitem__
+    mock_record.get.side_effect = data.get
     mock_session.run.return_value = [mock_record]
 
-    # 2. Run the tool
     tool = GraphRetriever()
-    tool.connect()
-    results = tool.search("Hippocampus")
-
-    # 3. Verify it worked
-    assert len(results) == 1
-    assert results[0]["name"] == "Hippocampus"
-    
-    # Verify the code actually called the DB
+    results = tool.search_ontology("Hippocampus")
+    assert results[0].name == "Hippocampus"
+    assert results[0].definition == "Brain region"
     mock_session.run.assert_called_once()
