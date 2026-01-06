@@ -1,15 +1,27 @@
 import requests
 from typing import List, Dict, Optional
+from fastapi import HTTPException
 
 KS_BASE = "https://api.knowledge-space.org"
 
 
 def list_datasources() -> List[Dict]:
-    """List all available datasources"""
+    """List all available datasources from Knowledge Space API."""
     url = f"{KS_BASE}/datasources"
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.Timeout:
+        raise HTTPException(
+            status_code=504,
+            detail="Knowledge Space API timed out while listing datasources"
+        )
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch datasources from Knowledge Space API: {str(e)}"
+        )
 
 
 def get_datasource_metadata(datasource_id: str) -> Dict:
