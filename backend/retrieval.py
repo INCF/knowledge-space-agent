@@ -11,7 +11,6 @@ from transformers import AutoModel, AutoTokenizer
 
 logger = logging.getLogger("retrieval")
 logger.setLevel(logging.INFO)
-
 if not logger.handlers:
     _h = logging.StreamHandler()
     _h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
