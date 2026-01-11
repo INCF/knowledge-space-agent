@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
@@ -108,6 +108,32 @@ async def health():
         "timestamp": datetime.utcnow().isoformat(),
     }
 
+@app.post("/api/ocr", tags=["Chat"])
+async def ocr_endpoint(file: UploadFile = File(...)):
+    """
+    Receives an image, extracts neuroscience-related text using Gemini, 
+    and returns it to be used as a chat query.
+    """
+    try:
+        # 1. Read the uploaded image bytes
+        image_bytes = await file.read()
+        
+        # 2. Use the assistant to process the image 
+        # (We will add this method to your assistant next)
+        extracted_text = await assistant.extract_from_image(
+            image_bytes, 
+            mime_type=file.content_type
+        )
+        
+        return {"extracted_text": extracted_text}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to process image: {str(e)}"
+        )
+        
+        
 
 @app.post("/api/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_endpoint(msg: ChatMessage):

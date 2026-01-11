@@ -5,7 +5,9 @@ import json
 import asyncio
 from enum import Enum
 from typing import Dict, List, Optional, TypedDict, Any
-
+import io
+from PIL import Image
+import pytesseract
 from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
@@ -493,7 +495,49 @@ class NeuroscienceAssistant:
         self.chat_history.pop(session_id, None)
         self.session_memory.pop(session_id, None)
 
+    async def extract_from_image(self, image_bytes: bytes, mime_type: str) -> str:
+        """
+        Processes image bytes using Pytesseract and uses Gemini to 
+        clean/format the results into a valid neuroscience query.
+        """
+        try:
+            # 1. Convert bytes to an Image object
+            img = Image.open(io.BytesIO(image_bytes))
 
+            # 2. Run OCR in a background thread (to keep the app responsive)
+            raw_text = await asyncio.to_thread(pytesseract.image_to_string, img)
+            
+            if not raw_text.strip():
+                return "The image appears to be empty or unreadable."
+
+            # 3. Use Gemini to "clean" the messy OCR text 
+            # (OCR often results in typos or weird characters in scientific papers)
+            client = _get_genai_client()
+            clean_prompt = (
+    "Extract ONLY the scientific search terms from this OCR text. "
+    "Return the terms as a comma-separated list. "
+    "Do NOT include explanations, introductions, or extra text.\n\n"
+    f"OCR Text: {raw_text}"
+)
+            
+            cfg = genai_types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=256
+            )
+            
+            resp = client.models.generate_content(
+                model=FLASH_LITE_MODEL, 
+                contents=[clean_prompt], 
+                config=cfg
+            )
+            raw_output = (resp.text or raw_text).strip()
+            clean_text = raw_output.replace("**", "")
+            clean_text = "\n".join([line.lstrip("-* ").strip() for line in clean_text.splitlines()])
+            return clean_text
+
+        except Exception as e:
+            print(f"OCR Error: {e}")
+            return f"Error extracting text: {str(e)}"
     async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
         try:
             if reset:
