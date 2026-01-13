@@ -119,7 +119,6 @@ async def ocr_endpoint(file: UploadFile = File(...)):
         image_bytes = await file.read()
         
         # 2. Use the assistant to process the image 
-        # (We will add this method to your assistant next)
         extracted_text = await assistant.extract_from_image(
             image_bytes, 
             mime_type=file.content_type
