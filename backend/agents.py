@@ -460,13 +460,24 @@ async def generate_final_response(state: AgentState) -> AgentState:
             "- datasets from EBRAINS \n"
         )
         return {**state, "final_response": response}
+    
     raw_results = state.get("final_results", [])
+    
+    # Handle empty retrieval results
+    if not raw_results:
+        return {**state, "final_response": "No matching datasets found. Try a different search query."}
+    
     start_number = state.get("__start_number__", 1)
     prev_text = state.get("__previous_text__", "")
     print(f"Generating response for {len(raw_results)} final results, start={start_number}, intents={intents}")
-    response = await call_gemini_for_final_synthesis(
-        state["effective_query"], raw_results, intents, start_number=start_number, previous_text=prev_text
-    )
+    
+    try:
+        response = await call_gemini_for_final_synthesis(
+            state["effective_query"], raw_results, intents, start_number=start_number, previous_text=prev_text
+        )
+    except Exception:
+        response = "Unable to process your request. Please try again."
+    
     return {**state, "final_response": response}
 
 
