@@ -75,6 +75,48 @@ Try asking me something like:
     });
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Show a temporary "reading" state
+    setIsLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error('OCR failed');
+
+      const data = await response.json();
+      
+      // Put the extracted text into the input box for the user
+      setInputValue(data.extracted_text);
+    } catch (error) {
+      console.error("Upload error:", error);
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        type: 'error',
+        content: 'Failed to extract text from the image. Please try a clearer screenshot.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      // Reset the file input so the same file can be uploaded again if needed
+      e.target.value = '';
+    }
+  };
+
+
+
+
+
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
@@ -188,29 +230,54 @@ Try asking me something like:
         {/* Input Area */}
         <footer className="input-section">
           <div className="input-container">
-            <div className="input-wrapper">
-              <input 
-                type="text" 
-                className="message-input" 
-                placeholder="Ask about neuroscience datasets, brain imaging data, or research topics..."
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={isLoading}
-              />
-              <button 
-                className={`send-button ${isLoading || !inputValue.trim() ? 'disabled' : ''}`}
-                type="button" 
-                onClick={sendMessage} 
-                disabled={isLoading || !inputValue.trim()}
-              >
-                {isLoading ? (
-                  <i className="fas fa-spinner fa-spin"></i>
-                ) : (
-                  <i className="fas fa-paper-plane"></i>
-                )}
-              </button>
-            </div>
+           <div className="input-wrapper" style={{ alignItems: 'flex-end' }}>
+  <input 
+    type="file" id="image-upload" accept="image/*" hidden 
+    onChange={handleImageUpload} disabled={isLoading}
+  />
+  
+  <label htmlFor="image-upload" className={`action-btn upload-btn ${isLoading ? 'disabled' : ''}`}>
+    <i className="fas fa-paperclip"></i>
+  </label>
+
+  {/* Dynamic Textarea */}
+  <textarea 
+    className="message-input" 
+    placeholder="Type or upload an image..."
+    value={inputValue}
+    rows={1}
+    onChange={(e) => {
+        setInputValue(e.target.value);
+        // Reset height to calculate correctly
+        e.target.style.height = 'inherit';
+        // Set new height based on scrollHeight, capped at 150px
+        e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+    }}
+    onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+            // Reset height after sending
+            (e.target as HTMLTextAreaElement).style.height = 'inherit';
+        }
+    }}
+    style={{ 
+        resize: 'none', 
+        overflowY: inputValue.split('\n').length > 5 ? 'auto' : 'hidden',
+        minHeight: '44px',
+        maxHeight: '150px'
+    }}
+    disabled={isLoading}
+  />
+  
+  <button 
+    className={`send-button ${isLoading || !inputValue.trim() ? 'disabled' : ''}`}
+    onClick={sendMessage} 
+    disabled={isLoading || !inputValue.trim()}
+  >
+    {isLoading ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-paper-plane"></i>}
+  </button>
+</div>
             <div className="input-footer">
               <i className="fas fa-info-circle"></i>
               <span>Powered by INCF KnowledgeSpace API - Neuroscience datasets</span>
