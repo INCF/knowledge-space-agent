@@ -145,6 +145,7 @@ The backend requires specific environment variables to connect to **Google Cloud
 In one terminal, from the project root with the virtual environment active:
 
 ```bash
+cd backend
 uv run main.py
 ```
 

@@ -233,3 +233,85 @@ class Retriever:
         except Exception as e:
             logger.error(f"Matching Engine search failed: {e}")
             return []
+        
+    
+    def hybrid_search(
+        self,
+        query: str,
+        top_k: int = 20,
+        context: Optional[Dict[str, Any]] = None
+    ) -> List[RetrievedItem]:
+        """
+        Hybrid retrieval: Vector Search + Keyword Search with RRF
+        """
+
+        vector_results = self.search(query, top_k, context)
+        keyword_results = self.keyword_search(query, top_k)
+
+        if not keyword_results:
+            logger.info(
+                "Hybrid search fallback: returning vector results only"
+            )
+            return vector_results
+
+        fused_results = reciprocal_rank_fusion(
+            vector_results,
+            keyword_results
+        )
+
+        logger.info(
+            
+            "Hybrid search results | vector=%d keyword=%d fused=%d",
+            len(vector_results),
+            len(keyword_results),
+            len(fused_results),
+        )
+
+        return fused_results[:top_k]
+
+
+
+
+
+    def keyword_search(
+        self, query: str, top_k: int = 20
+    ) -> List[RetrievedItem]:
+        """
+        Keyword-based search (BM25 / Elastic).
+        Placeholder implementation for hybrid search.
+        """
+        logger.info("Keyword search called (placeholder)")
+        return []
+
+
+
+def reciprocal_rank_fusion(
+    vector_results: List[RetrievedItem],
+    keyword_results: List[RetrievedItem],
+    k: int = 60
+) -> List[RetrievedItem]:
+    """
+    Combine vector and keyword results using Reciprocal Rank Fusion (RRF)
+    """
+
+    scores: Dict[str, Dict[str, Any]] = {}
+
+    def add_scores(results: List[RetrievedItem]):
+        for rank, item in enumerate(results):
+            if item.id not in scores:
+                scores[item.id] = {
+                    "item": item,
+                    "score": 0.0
+                }
+            scores[item.id]["score"] += 1 / (k + rank + 1)
+
+    add_scores(vector_results)
+    add_scores(keyword_results)
+
+    fused = sorted(
+        scores.values(),
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    return [x["item"] for x in fused]
