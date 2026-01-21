@@ -260,6 +260,7 @@ class Retriever:
         )
 
         logger.info(
+            
             "Hybrid search results | vector=%d keyword=%d fused=%d",
             len(vector_results),
             len(keyword_results),
