@@ -10,6 +10,43 @@ from urllib.parse import urlparse
 from difflib import SequenceMatcher
 
 
+# Query Expansion Code 
+# --- Query Expansion for Neuroscience terms ---
+QUERY_SYNONYMS = {
+    "mouse brain": ["Rattus norvegicus", "somatosensory cortex", "cortex", "hippocampus"],
+    "memory": ["hippocampus", "synaptic plasticity"],
+    "hippocampus": ["CA1", "CA3", "dentate gyrus"],
+    # add more phrases and synonyms as needed
+}
+
+
+def expand_query(query: str) -> str:
+    query_lower = query.lower()
+    expanded = [query_lower]  # original query
+
+    # Keep track of added terms to avoid duplicates
+    added_terms = set(expanded)
+
+    # Phrase match
+    for phrase, synonyms in QUERY_SYNONYMS.items():
+        if phrase in query_lower:
+            for syn in synonyms:
+                if syn not in added_terms:
+                    expanded.append(syn)
+                    added_terms.add(syn)
+
+    # Word match
+    for word in query_lower.split():
+        if word in QUERY_SYNONYMS:
+            for syn in QUERY_SYNONYMS[word]:
+                if syn not in added_terms:
+                    expanded.append(syn)
+                    added_terms.add(syn)
+
+    return " ".join(expanded)
+
+
+
 def tool(args_schema):
     def decorator(func):
         func.args_schema = args_schema
@@ -452,7 +489,7 @@ def smart_knowledge_search(
     data_source: Optional[str] = None,
     top_k: int = 10,
 ) -> dict:
-    q = query or "*"
+    q = expand_query(query) if query else "*"
     if filters:
         config_path = "datasources_config.json"
         if os.path.exists(config_path):
@@ -463,3 +500,15 @@ def smart_knowledge_search(
                 results = _perform_search(target_id, q, dict(filters), all_configs)
                 return {"combined_results": results[:top_k]}
     return general_search(q, top_k, enrich_details=True)
+
+
+# Test code
+if __name__ == "__main__":
+    test_queries = ["mouse brain", "memory", "hippocampus"]
+
+    for q in test_queries:
+        print(f"Searching for: {q}")
+        results = smart_knowledge_search(q, top_k=3)
+        for i, r in enumerate(results.get("combined_results", [])):
+            print(f"  {i+1}. {r.get('title') or r.get('title_guess')} - {r.get('primary_link')}")
+        print("-" * 50)
