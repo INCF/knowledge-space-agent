@@ -43,7 +43,5 @@ dev = [
     "mypy>=1.0.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["backend*", "frontend*", "data_processing*"]
-namespaces = false
+[tool.setuptools]
+packages = ["backend", "data_processing"]
