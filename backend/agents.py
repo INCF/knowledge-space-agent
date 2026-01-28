@@ -112,6 +112,39 @@ def _is_more_query(text: str) -> Optional[int]:
     m = re.match(r"^(?:next|more|show)\s+(\d{1,3})\b", t)
     return int(m.group(1)) if m else (None if any(w in t for w in ["more", "next", "continue"]) else None)
 
+def _parse_llm_json(text: str) -> dict:
+    """
+    Robustly extracts and parses JSON from LLM responses, 
+    handling markdown blocks and leading/trailing text.
+    """
+    if not text:
+        return {}
+    
+    # Try direct parsing first
+    try:
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt to extract content between ```json and ``` or just ```
+    pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: Find the first '{' and last '}'
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1:
+        try:
+            return json.loads(text[start:end+1])
+        except json.JSONDecodeError:
+            pass
+
+    return {}
 
 #  LLM calls using google.genai 
 async def call_gemini_for_keywords(query: str) -> List[str]:
@@ -142,7 +175,7 @@ async def call_gemini_for_keywords(query: str) -> List[str]:
         response_mime_type="application/json",
     )
     resp = client.models.generate_content(model=FLASH_LITE_MODEL, contents=[prompt], config=cfg)
-    out = json.loads(resp.text or "{}")
+    out = _parse_llm_json(resp.text)
     kws = out.get("keywords", []) or []
     normalized: List[str] = []
     for k in kws:
@@ -222,7 +255,7 @@ async def call_gemini_detect_intents(query: str, history: List[str]) -> List[str
         response_mime_type="application/json",
     )
     resp = client.models.generate_content(model=FLASH_LITE_MODEL, contents=[prompt], config=cfg)
-    out = json.loads(resp.text or "{}")
+    out = _parse_llm_json(resp.text)
     intents = [i for i in out.get("intents", []) if i in allowed]
     return list(dict.fromkeys(intents or [QueryIntent.DATA_DISCOVERY.value]))[:6]
 
