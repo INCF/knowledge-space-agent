@@ -1,13 +1,20 @@
 import requests
 from typing import List, Dict, Optional
+from requests.exceptions import RequestException, Timeout
 
 KS_BASE = "https://api.knowledge-space.org"
+DEFAULT_TIMEOUT = 15
 
+_session = requests.Session()
 
+def _validate_non_empty(value: str, name: str) -> None:
+    if not value or not value.strip():
+        raise ValueError(f"{name} cannot be empty")
+    
 def list_datasources() -> List[Dict]:
     """List all available datasources"""
     url = f"{KS_BASE}/datasources"
-    response = requests.get(url, timeout=10)
+    response = _session.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
     return response.json()
 
@@ -137,21 +144,48 @@ def format_dataset_details(dataset: Dict) -> str:
 
 class KnowledgeSpaceAPI:
     """Wrapper class for KnowledgeSpace API interactions"""
-    
+
     def __init__(self):
         self.base_url = KS_BASE
-    
-    def search_and_format(self, query: str, datasource_id: Optional[str] = None, limit: int = 10) -> str:
-        """Search datasets and return formatted results"""
+
+    def search_and_format(
+        self,
+        query: str,
+        datasource_id: Optional[str] = None,
+        limit: int = 10
+    ) -> str:
+        """
+        Search datasets and return formatted results.
+
+        Raises:
+            ValueError: if query is empty
+        """
         try:
+            _validate_non_empty(query, "query")
+
             if datasource_id:
-                results = search_datasets(datasource_id, query, per_page=limit)
+                results = search_datasets(
+                    datasource_id=datasource_id,
+                    query=query,
+                    per_page=limit
+                )
             else:
-                results = global_search_datasets(query, per_page=limit)
-            
+                results = global_search_datasets(
+                    query=query,
+                    per_page=limit
+                )
+
             return format_datasets_list(results)
-        except Exception as e:
-            return f"Error searching datasets: {str(e)}"
+
+        except ValueError as e:
+            return f"Input error: {e}"
+
+        except Timeout:
+            return "Knowledge Space API request timed out."
+
+        except RequestException as e:
+            return f"Network error while contacting Knowledge Space API: {e}"
+
     
     def get_datasources_info(self) -> str:
         """Get formatted list of available datasources"""
@@ -169,7 +203,17 @@ class KnowledgeSpaceAPI:
     def get_dataset_info(self, datasource_id: str, dataset_id: str) -> str:
         """Get formatted dataset details"""
         try:
+            _validate_non_empty(datasource_id, "datasource_id")
+            _validate_non_empty(dataset_id, "dataset_id")
+
             dataset = get_dataset_details(datasource_id, dataset_id)
             return format_dataset_details(dataset)
-        except Exception as e:
-            return f"Error retrieving dataset details: {str(e)}"
+
+        except ValueError as e:
+            return f"Input error: {e}"
+
+        except Timeout:
+            return "Knowledge Space API request timed out."
+
+        except RequestException as e:
+            return f"Network error while contacting Knowledge Space API: {e}"
