@@ -3,7 +3,7 @@ name = "knowledgespaceagent"
 version = "0.1.0"
 description = "Assistant"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "aiohttp>=3.12.15",
     "bs4>=0.0.2",
