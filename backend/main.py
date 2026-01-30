@@ -4,7 +4,7 @@ import time
 import asyncio
 from typing import Optional, Dict, Any
 from datetime import datetime
-
+from config import validate_config
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,8 @@ import json
 from agents import NeuroscienceAssistant
 
 load_dotenv()
+
+validate_config()
 
 # FastAPI app + CORS
 app = FastAPI(
