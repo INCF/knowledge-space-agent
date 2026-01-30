@@ -15,36 +15,58 @@ interface ChatResponse {
   error: boolean;
 }
 
-const App: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+// Helper function to get initial messages from localStorage
+const getInitialMessages = (): Message[] => {
+  try {
+    const savedHistory = localStorage.getItem('chatHistory');
+    if (savedHistory) {
+      const parsed = JSON.parse(savedHistory);
+      return parsed.map((msg: any) => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }));
+    }
+  } catch (e) {
+    console.error('Failed to load chat history:', e);
+  }
+  return [];
+};
 
-  useEffect(() => {
-    // Clear any stored chat history on app load/refresh
-    localStorage.removeItem('chatMessages');
-    localStorage.removeItem('chatHistory');
-    sessionStorage.removeItem('chatMessages');
-    sessionStorage.removeItem('chatHistory');
-    
-    // Add welcome message
-    const welcomeMessage: Message = {
-      id: 'welcome',
-      type: 'ai',
-      content: `Hello! I'm your INCF KnowledgeSpace assistant. I can help you discover and explore neuroscience datasets.
+// Welcome message constant
+const WELCOME_MESSAGE: Message = {
+  id: 'welcome',
+  type: 'ai',
+  content: `Hello! I'm your INCF KnowledgeSpace assistant. I can help you discover and explore neuroscience datasets.
 
 Try asking me something like:
 • "Brain imaging"
 • "EEG data "
 • "fMRI"
 • "cognitive neuroscience"`,
-      timestamp: new Date()
-    };
-    setMessages([welcomeMessage]);
+  timestamp: new Date()
+};
 
-    // Check API health
+const App: React.FC = () => {
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const savedMessages = getInitialMessages();
+    if (savedMessages.length > 0) {
+      return savedMessages;
+    }
+    return [WELCOME_MESSAGE];
+  });
+  
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('chatHistory', JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  useEffect(() => {
     checkApiHealth();
   }, []);
 
@@ -134,13 +156,17 @@ Try asking me something like:
   };
 
   const clearChat = () => {
-    setMessages(messages.filter(msg => msg.id === 'welcome'));
+    const welcomeMsg: Message = {
+      ...WELCOME_MESSAGE,
+      timestamp: new Date()
+    };
+    setMessages([welcomeMsg]);
+    localStorage.removeItem('chatHistory');
   };
 
   return (
     <div className="app-container">
       <div className="main-layout">
-        {/* Header */}
         <header className="header-section">
           <div className="header-content">
             <div className="brand-section">
@@ -166,7 +192,6 @@ Try asking me something like:
           </div>
         </header>
 
-        {/* Chat Messages Container */}
         <main 
           className="chat-container" 
           ref={chatContainerRef}
@@ -180,12 +205,10 @@ Try asking me something like:
               />
             ))}
             
-            {/* Loading indicator */}
             {isLoading && <LoadingMessage />}
           </div>
         </main>
 
-        {/* Input Area */}
         <footer className="input-section">
           <div className="input-container">
             <div className="input-wrapper">
