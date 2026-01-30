@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Logo from './components/Logo';
 import LoadingMessage from './components/LoadingMessage';
 import MessageBubble from './components/MessageBubble';
+import { sanitizeErrorMessage, isErrorResponse, logError } from './utils/ErrorHandler';
 
 interface Message {
   id: string;
@@ -105,19 +106,34 @@ Try asking me something like:
 
       const data: ChatResponse = await response.json();
 
+      // Check if response is an error and sanitize it
+      const isError = data.error || isErrorResponse(data.response);
+      const displayContent = isError 
+        ? sanitizeErrorMessage(data.response)
+        : data.response;
+
+      // Log original error for debugging (only in console)
+      if (isError) {
+        logError('API Response', data.response);
+      }
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        type: data.error ? 'error' : 'ai',
-        content: data.response,
+        type: isError ? 'error' : 'ai',
+        content: displayContent,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
+      // Log full error for debugging
+      logError('Chat Request Failed', error);
+      
+      // Show sanitized message to user
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'error',
-        content: 'Sorry, I encountered an error while processing your request. Please check your connection and try again.',
+        content: sanitizeErrorMessage(String(error)),
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
