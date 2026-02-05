@@ -80,7 +80,7 @@ uv venv
 
 # Activate it:
 # On Windows (cmd):
- .venv/bin/activate
+  .venv\Scripts\activate
 
 ```
 
