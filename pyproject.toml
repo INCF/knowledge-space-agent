@@ -24,6 +24,7 @@ dependencies = [
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
     "sentence-transformers>=3.0.0",
+    "slowapi>=0.1.9",
     "sqlalchemy>=2.0.42",
     "torch>=2.7.1",
     "tqdm>=4.67.1",
