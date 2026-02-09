@@ -1,3 +1,9 @@
+[project]
+name = "knowledgespaceagent"
+version = "0.1.0"
+description = "Assistant"
+readme = "README.md"
+requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.12.15",
     "bs4>=0.0.2",
@@ -23,4 +29,13 @@ dependencies = [
     "torch>=2.7.1",
     "tqdm>=4.67.1",
     "uvicorn>=0.34.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
 ]
