@@ -2,20 +2,35 @@
 import os
 import time
 import asyncio
-import json
 from typing import Optional, Dict, Any
 from datetime import datetime
+import logging
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
+import json
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from agents import NeuroscienceAssistant
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Rate limit configuration
+RATE_LIMIT = os.getenv("RATE_LIMIT", "10/minute")
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # FastAPI app + CORS
 app = FastAPI(
@@ -23,6 +38,26 @@ app = FastAPI(
     description="Neuroscience Dataset Discovery Assistant",
     version="2.0.0",
 )
+
+# Attach limiter to app
+app.state.limiter = limiter
+
+
+# Custom rate limit exceeded handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    logger.warning(
+        f"Rate limit exceeded for IP: {get_remote_address(request)} "
+        f"on path: {request.url.path}"
+    )
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": "Too many requests. Please wait and try again.",
+            "retry_after": str(exc.detail),
+        },
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +69,7 @@ app.add_middleware(
 
 # Initialize the assistant with vector search agent on startup
 assistant = NeuroscienceAssistant()
+
 
 # Models
 class ChatMessage(BaseModel):
@@ -109,67 +145,32 @@ async def health():
     }
 
 
-@app.get("/api/chat/stream", tags=["Chat"])
-async def chat_stream_endpoint(query: str, session_id: str = "default"):
-    """
-    Stream chat responses using Server-Sent Events (SSE).
-    Tokens appear in real-time as the LLM generates them.
-    
-    This provides a better user experience by showing responses
-    as they are generated, similar to ChatGPT.
-    """
-    async def generate():
-        try:
-            # Send initial connection message
-            yield f"data: {json.dumps({'type': 'start', 'message': 'Connected'})}\n\n"
-            
-            # Get the response from the assistant
-            response_text = await assistant.handle_chat(
-                session_id=session_id,
-                query=query,
-                reset=False,
-            )
-            
-            # Stream the response in chunks (word-by-word simulation)
-            words = response_text.split(' ')
-            chunk_size = 3  # Send 3 words at a time for smooth streaming
-            
-            for i in range(0, len(words), chunk_size):
-                chunk = ' '.join(words[i:i + chunk_size])
-                if i > 0:
-                    chunk = ' ' + chunk
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-                await asyncio.sleep(0.03)  # 30ms delay for streaming effect
-            
-            # Send completion message
-            yield f"data: {json.dumps({'type': 'done', 'message': 'Complete'})}\n\n"
-            
-        except asyncio.TimeoutError:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Request timed out. Please try a simpler query.'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-    
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
-
 @app.post("/api/chat", response_model=ChatResponse, tags=["Chat"])
-async def chat_endpoint(msg: ChatMessage):
+@limiter.limit(RATE_LIMIT)
+async def chat_endpoint(request: Request, msg: ChatMessage):
     try:
         start_time = time.time()
+
+        # Log the request
+        client_ip = get_remote_address(request)
+        logger.info(
+            f"Chat request from {client_ip} | "
+            f"session: {msg.session_id} | "
+            f"query length: {len(msg.query)}"
+        )
+
         response_text = await assistant.handle_chat(
             session_id=msg.session_id or "default",
             query=msg.query,
             reset=bool(msg.reset),
         )
         process_time = time.time() - start_time
+
+        logger.info(
+            f"Chat response sent to {client_ip} | "
+            f"process_time: {process_time:.2f}s"
+        )
+
         metadata = {
             "process_time": process_time,
             "session_id": msg.session_id,
@@ -183,6 +184,7 @@ async def chat_endpoint(msg: ChatMessage):
             detail="Request timed out. Please try with a simpler query.",
         )
     except Exception as e:
+        logger.error(f"Chat error: {e}")
         return ChatResponse(
             response=f"Error: {e}",
             metadata={"error": True, "session_id": msg.session_id},
@@ -198,6 +200,7 @@ async def reset_session(payload: Dict[str, str]):
 
 # Entry point
 if __name__ == "__main__":
+    logger.info(f"Starting server with rate limit: {RATE_LIMIT}")
     env = os.getenv("ENVIRONMENT", "production").lower()
     uvicorn.run(
         "main:app",
