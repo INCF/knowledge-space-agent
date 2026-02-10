@@ -252,3 +252,14 @@ class VertexRetriever(BaseRetriever):
         except Exception as e:
             logger.error(f"Matching Engine search failed: {e}")
             return []
+
+
+
+
+
+def get_retriever() -> BaseRetriever:
+    """
+    Factory for creating a retriever instance.
+    Currently returns the Vertex-based retriever.
+    """
+    return VertexRetriever()
