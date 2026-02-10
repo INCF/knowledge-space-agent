@@ -9,6 +9,26 @@ import torch
 from google.cloud import aiplatform, bigquery
 from transformers import AutoModel, AutoTokenizer
 
+from abc import ABC, abstractmethod
+
+
+class BaseRetriever(ABC):
+    @abstractmethod
+    def search(
+        self,
+        query: str,
+        top_k: int = 20,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        """Return a list of RetrievedItem"""
+        pass
+
+    @property
+    @abstractmethod
+    def is_enabled(self) -> bool:
+        pass
+
+
 logger = logging.getLogger("retrieval")
 logger.setLevel(logging.INFO)
 
@@ -28,8 +48,7 @@ class RetrievedItem:
     other_links: List[str]
     similarity: float 
 
-
-class Retriever:
+class VertexRetriever(BaseRetriever):
     """
     Vertex AI Matching Engine retriever.
 

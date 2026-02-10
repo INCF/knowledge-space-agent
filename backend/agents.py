@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, TypedDict, Any
 from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
-from retrieval import Retriever
+from retrieval import VertexRetriever
 
 #  LLM (Gemini) client setup 
 try:
@@ -352,7 +352,7 @@ class KSSearchAgent:
 
 class VectorSearchAgent:
     def __init__(self):
-        self.retriever = Retriever()
+        self.retriever = VertexRetriever()
         self.is_enabled = self.retriever.is_enabled
 
     async def run(self, query: str, want: int, context: Optional[Dict] = None) -> List[dict]:
