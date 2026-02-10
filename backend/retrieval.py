@@ -260,6 +260,13 @@ class VertexRetriever(BaseRetriever):
 def get_retriever() -> BaseRetriever:
     """
     Factory for creating a retriever instance.
-    Currently returns the Vertex-based retriever.
+    Falls back to local retriever when Vertex is unavailable.
     """
-    return VertexRetriever()
+    vertex = VertexRetriever()
+    if vertex.is_enabled:
+        return vertex
+
+    from local_retriever import LocalRetriever
+    logger.info("Vertex retriever unavailable. Falling back to LocalRetriever.")
+    return LocalRetriever()
+
