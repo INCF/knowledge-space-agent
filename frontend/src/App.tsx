@@ -8,11 +8,39 @@ interface Message {
   type: 'user' | 'ai' | 'error';
   content: string;
   timestamp: Date;
+  debugMetadata?: any; // Debug trace information from backend
 }
 
 interface ChatResponse {
   response: string;
-  error: boolean;
+  error?: boolean;
+  metadata?: {
+    process_time?: number;
+    session_id?: string;
+    timestamp?: string;
+  };
+  debug?: {
+    timestamps?: Record<string, string>;
+    effective_query?: string;
+    keywords?: string[];
+    intents?: string[];
+    retrieved_documents?: Array<{
+      id: string;
+      title: string;
+      excerpt: string;
+      score: number;
+      source: string;
+    }>;
+    retrieval_scores?: {
+      vector?: number[];
+      ks_search?: number[];
+    };
+    step_durations?: {
+      prepare?: number;
+      search?: number;
+      generation?: number;
+    };
+  };
 }
 
 const App: React.FC = () => {
@@ -96,7 +124,10 @@ Try asking me something like:
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ 
+          query,
+          debug: true // Always request debug metadata for export
+        })
       });
 
       if (!response.ok) {
@@ -109,7 +140,8 @@ Try asking me something like:
         id: (Date.now() + 1).toString(),
         type: data.error ? 'error' : 'ai',
         content: data.response,
-        timestamp: new Date()
+        timestamp: new Date(),
+        debugMetadata: data.debug // Store debug metadata with message
       };
 
       setMessages(prev => [...prev, aiMessage]);
@@ -137,6 +169,32 @@ Try asking me something like:
     setMessages(messages.filter(msg => msg.id === 'welcome'));
   };
 
+  const exportConversation = () => {
+    // Prepare export data
+    const exportData = {
+      exported_at: new Date().toISOString(),
+      conversation: messages.map(msg => ({
+        id: msg.id,
+        type: msg.type,
+        content: msg.content,
+        timestamp: msg.timestamp.toISOString(),
+        debug: msg.debugMetadata || null
+      }))
+    };
+
+    // Create and download JSON file
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `conversation-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="app-container">
       <div className="main-layout">
@@ -155,6 +213,14 @@ Try asking me something like:
                 <div className={`status-dot ${isOnline ? 'online' : 'offline'}`}></div>
                 <span className="status-text">{isOnline ? 'Connected' : 'Disconnected'}</span>
               </div>
+              <button 
+                className="action-btn export-btn" 
+                onClick={exportConversation}
+                title="Export conversation"
+                disabled={messages.length <= 1}
+              >
+                <i className="fas fa-download"></i>
+              </button>
               <button 
                 className="action-btn clear-btn" 
                 onClick={clearChat}

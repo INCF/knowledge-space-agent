@@ -164,6 +164,21 @@ html, body {
     transform: translateY(-1px);
 }
 
+.action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.export-btn {
+    color: #10b981;
+}
+
+.export-btn:hover:not(:disabled) {
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
+}
+
 /* Chat Container */
 .chat-container {
     flex: 1;

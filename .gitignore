@@ -164,3 +164,7 @@ cython_debug/
 
 #Embedded data files
 data_processing/embeddings.jsonl
+
+# Secrets
+service-account.json
+backend/service-account.json
