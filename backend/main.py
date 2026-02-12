@@ -44,11 +44,16 @@ class ChatMessage(BaseModel):
         default=False,
         description="If true, clears server-side session history before handling the message",
     )
+    debug: Optional[bool] = Field(
+        default=False,
+        description="If true, returns debug metadata including retrieved documents, scores, prompts, and timestamps",
+    )
 
 
 class ChatResponse(BaseModel):
     response: str
     metadata: Optional[Dict[str, Any]] = None
+    debug: Optional[Dict[str, Any]] = None
 
 
 # Lightweight health helpers
@@ -113,10 +118,11 @@ async def health():
 async def chat_endpoint(msg: ChatMessage):
     try:
         start_time = time.time()
-        response_text = await assistant.handle_chat(
+        response_text, debug_metadata = await assistant.handle_chat(
             session_id=msg.session_id or "default",
             query=msg.query,
             reset=bool(msg.reset),
+            debug=bool(msg.debug),
         )
         process_time = time.time() - start_time
         metadata = {
@@ -125,7 +131,7 @@ async def chat_endpoint(msg: ChatMessage):
             "timestamp": datetime.utcnow().isoformat(),
             "reset": bool(msg.reset),
         }
-        return ChatResponse(response=response_text, metadata=metadata)
+        return ChatResponse(response=response_text, metadata=metadata, debug=debug_metadata)
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
@@ -133,8 +139,11 @@ async def chat_endpoint(msg: ChatMessage):
         )
     except Exception as e:
         return ChatResponse(
-            response=f"Error: {e}",
-            metadata={"error": True, "session_id": msg.session_id},
+            response=f"Error: {str(e)}",
+            metadata={
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat(),
+            },
         )
 
 

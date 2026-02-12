@@ -235,7 +235,7 @@ async def call_gemini_for_final_synthesis(
     intents: List[str],
     start_number: int = 1,
     previous_text: Optional[str] = None,
-) -> str:
+) -> tuple[str, str]:
 
     _require_llm_creds()
     client = _get_genai_client()
@@ -309,7 +309,7 @@ async def call_gemini_for_final_synthesis(
     text = (resp.text or "").strip()
     if not text:
         raise RuntimeError("Gemini synthesis returned empty text.")
-    return text
+    return text, prompt
 
 
 #  Agent state and search/fuse/response pipeline 
@@ -325,6 +325,8 @@ class AgentState(TypedDict):
     final_results: List[dict]
     all_results: List[dict]
     final_response: str
+    debug_mode: bool
+    debug_metadata: Dict[str, Any]
 
 
 class KSSearchAgent:
@@ -374,11 +376,22 @@ class VectorSearchAgent:
 
 async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     print("--- Node: Keywords, Rewrite, Intents ---")
+    from datetime import datetime
+    
+    # Initialize debug metadata if debug mode is enabled
+    debug_meta = state.get("debug_metadata", {})
+    if state.get("debug_mode", False):
+        debug_meta["timestamps"] = debug_meta.get("timestamps", {})
+        debug_meta["timestamps"]["prepare_start"] = datetime.utcnow().isoformat()
+        debug_meta["prompts"] = debug_meta.get("prompts", {})
+    
     # Detect intents on the raw input first 
     intents0 = await call_gemini_detect_intents(state["query"], state.get("history", []))
     if intents0 == [QueryIntent.GREETING.value]:
         print("Pure greeting detected; skipping search.")
-        return {**state, "effective_query": state["query"], "keywords": [], "intents": intents0}
+        if state.get("debug_mode", False):
+            debug_meta["timestamps"]["prepare_end"] = datetime.utcnow().isoformat()
+        return {**state, "effective_query": state["query"], "keywords": [], "intents": intents0, "debug_metadata": debug_meta}
 
     effective = await call_gemini_rewrite_with_history(state["query"], state.get("history", []))
     keywords = await call_gemini_for_keywords(effective)
@@ -387,7 +400,14 @@ async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     print(f"  -> Effective query: {effective}")
     print(f"  -> Keywords: {keywords}")
     print(f"  -> Intents: {intents}")
-    return {**state, "effective_query": effective, "keywords": keywords, "intents": intents}
+    
+    if state.get("debug_mode", False):
+        debug_meta["timestamps"]["prepare_end"] = datetime.utcnow().isoformat()
+        debug_meta["effective_query"] = effective
+        debug_meta["keywords"] = keywords
+        debug_meta["intents"] = intents
+    
+    return {**state, "effective_query": effective, "keywords": keywords, "intents": intents, "debug_metadata": debug_meta}
 
 
 # Global vector agent instance - initialized once per process
@@ -401,9 +421,20 @@ def get_vector_agent():
 
 async def execute_search(state: AgentState) -> Dict[str, Any]:
     print("--- Node: Search Execution ---")
+    from datetime import datetime
+    
+    debug_meta = state.get("debug_metadata", {})
+    if state.get("debug_mode", False):
+        if "timestamps" not in debug_meta:
+            debug_meta["timestamps"] = {}
+        debug_meta["timestamps"]["search_start"] = datetime.utcnow().isoformat()
+    
     if set(state.get("intents", [])) == {QueryIntent.GREETING.value}:
         print("Pure greeting; skipping search.")
-        return {"ks_results": [], "vector_results": []}
+        if state.get("debug_mode", False):
+            debug_meta["timestamps"]["search_end"] = datetime.utcnow().isoformat()
+        return {"ks_results": [], "vector_results": [], "debug_metadata": debug_meta}
+    
     want_pool = 60  # collect enough for several pages (15 per page)
     
     # Run both searches simultaneously using shared vector agent
@@ -422,7 +453,43 @@ async def execute_search(state: AgentState) -> Dict[str, Any]:
     all_ks_results = ks_results_data.get("combined_results", [])
     
     print(f"Search completed: KS results={len(all_ks_results)}, Vector results={len(vec_results)}")
-    return {"ks_results": all_ks_results, "vector_results": vec_results}
+    
+    # Collect debug information if enabled
+    if state.get("debug_mode", False):
+        debug_meta["timestamps"]["search_end"] = datetime.utcnow().isoformat()
+        
+        # Collect retrieved documents with metadata
+        debug_meta["retrieved_documents"] = []
+        
+        # Add vector search results to debug metadata
+        for vec_res in vec_results[:10]:  # Top 10 results
+            if isinstance(vec_res, dict):
+                debug_meta["retrieved_documents"].append({
+                    "id": vec_res.get("id", "unknown"),
+                    "title": vec_res.get("title_guess", "Untitled"),
+                    "excerpt": (vec_res.get("content", "") or "")[:200],
+                    "score": vec_res.get("similarity", 0),
+                    "source": "vector_search"
+                })
+        
+        # Add KS search results to debug metadata  
+        for ks_res in all_ks_results[:10]:  # Top 10 results
+            if isinstance(ks_res, dict):
+                debug_meta["retrieved_documents"].append({
+                    "id": ks_res.get("_id", "unknown"),
+                    "title": ks_res.get("title", ks_res.get("title_guess", "Untitled")),
+                    "excerpt": (ks_res.get("description", ks_res.get("content", "")) or "")[:200],
+                    "score": ks_res.get("_score", 0),
+                    "source": "ks_search"
+                })
+        
+        # Track retrieval scores
+        debug_meta["retrieval_scores"] = {
+            "vector": [v.get("similarity", 0) for v in vec_results[:10] if isinstance(v, dict)],
+            "ks_search": [k.get("_score", 0) for k in all_ks_results[:10] if isinstance(k, dict)]
+        }
+    
+    return {"ks_results": all_ks_results, "vector_results": vec_results, "debug_metadata": debug_meta}
 
 
 def fuse_results(state: AgentState) -> AgentState:
@@ -449,6 +516,14 @@ def fuse_results(state: AgentState) -> AgentState:
 
 async def generate_final_response(state: AgentState) -> AgentState:
     print("--- Node: Response Generation ---")
+    from datetime import datetime
+    
+    debug_meta = state.get("debug_metadata", {})
+    if state.get("debug_mode", False):
+        if "timestamps" not in debug_meta:
+            debug_meta["timestamps"] = {}
+        debug_meta["timestamps"]["generation_start"] = datetime.utcnow().isoformat()
+    
     intents = state.get("intents", [QueryIntent.DATA_DISCOVERY.value])
     if set(intents) == {QueryIntent.GREETING.value}:
         response = (
@@ -456,18 +531,56 @@ async def generate_final_response(state: AgentState) -> AgentState:
             "Try examples:\n"
             "- rat electrophysiology in hippocampus\n"
             "- human EEG visual stimulus\n"
-            "- fMRI datasets with CC0 or PDDL license\n"
+            "-MRI datasets with CC0 or PDDL license\n"
             "- datasets from EBRAINS \n"
         )
-        return {**state, "final_response": response}
+        if state.get("debug_mode", False):
+            debug_meta["timestamps"]["generation_end"] = datetime.utcnow().isoformat()
+        return {**state, "final_response": response, "debug_metadata": debug_meta}
+        
     raw_results = state.get("final_results", [])
     start_number = state.get("__start_number__", 1)
     prev_text = state.get("__previous_text__", "")
     print(f"Generating response for {len(raw_results)} final results, start={start_number}, intents={intents}")
-    response = await call_gemini_for_final_synthesis(
+    response, prompt = await call_gemini_for_final_synthesis(
         state["effective_query"], raw_results, intents, start_number=start_number, previous_text=prev_text
     )
-    return {**state, "final_response": response}
+    
+    if state.get("debug_mode", False):
+        debug_meta["timestamps"]["generation_end"] = datetime.utcnow().isoformat()
+        if "prompts" not in debug_meta:
+            debug_meta["prompts"] = {}
+        debug_meta["prompts"]["final_synthesis"] = prompt
+        
+        # Calculate step durations
+        timestamps = debug_meta.get("timestamps", {})
+        debug_meta["step_durations"] = {}
+        if "prepare_start" in timestamps and "prepare_end" in timestamps:
+            try:
+                from datetime import datetime as dt
+                start = dt.fromisoformat(timestamps["prepare_start"])
+                end = dt.fromisoformat(timestamps["prepare_end"])
+                debug_meta["step_durations"]["prepare"] = (end - start).total_seconds()
+            except:
+                pass
+        if "search_start" in timestamps and "search_end" in timestamps:
+            try:
+                from datetime import datetime as dt
+                start = dt.fromisoformat(timestamps["search_start"])
+                end = dt.fromisoformat(timestamps["search_end"])
+                debug_meta["step_durations"]["search"] = (end - start).total_seconds()
+            except:
+                pass
+        if "generation_start" in timestamps and "generation_end" in timestamps:
+            try:
+                from datetime import datetime as dt
+                start = dt.fromisoformat(timestamps["generation_start"])
+                end = dt.fromisoformat(timestamps["generation_end"])
+                debug_meta["step_durations"]["generation"] = (end - start).total_seconds()
+            except:
+                pass
+    
+    return {**state, "final_response": response, "debug_metadata": debug_meta}
 
 
 class NeuroscienceAssistant:
@@ -494,7 +607,7 @@ class NeuroscienceAssistant:
         self.session_memory.pop(session_id, None)
 
 
-    async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
+    async def handle_chat(self, session_id: str, query: str, reset: bool = False, debug: bool = False) -> tuple[str, Optional[Dict[str, Any]]]:
         try:
             if reset:
                 self.reset_session(session_id)
@@ -506,18 +619,18 @@ class NeuroscienceAssistant:
             if more_count is not None or (query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"}):
                 all_results = mem.get("all_results", [])
                 if not all_results:
-                    return "There are no earlier results to continue. Ask me for a dataset (e.g., 'human EEG BIDS')."
+                    return ("There are no earlier results to continue. Ask me for a dataset (e.g., 'human EEG BIDS').", None)
                 page_size = more_count or mem.get("page_size", 15)
                 page = mem.get("page", 1) + 1
                 start = (page - 1) * page_size
                 batch = all_results[start:start + page_size]
                 if not batch:
-                    return "You've reached the end of the results. Try refining the query."
+                    return ("You've reached the end of the results. Try refining the query.", None)
                 intents = mem.get("intents", [QueryIntent.DATA_DISCOVERY.value])
                 effective_query = mem.get("effective_query", "")
                 prev_text = mem.get("last_text", "")
                 
-                text = await call_gemini_for_final_synthesis(
+                text, _ = await call_gemini_for_final_synthesis(
                     effective_query, batch, intents, start_number=start + 1, previous_text=prev_text
                 )
                 mem.update({
@@ -529,7 +642,7 @@ class NeuroscienceAssistant:
                 self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {text}"])
                 if len(self.chat_history[session_id]) > 20:
                     self.chat_history[session_id] = self.chat_history[session_id][-20:]
-                return text
+                return (text, None)
 
             initial_state: AgentState = {
                 "session_id": session_id,
@@ -545,9 +658,12 @@ class NeuroscienceAssistant:
                 "__start_number__": 1,
                 "__previous_text__": "",
                 "final_response": "",
+                "debug_mode": debug,
+                "debug_metadata": {},
             }
             final_state = await self.graph.ainvoke(initial_state)
             response_text = final_state.get("final_response", "I encountered an unexpected empty response.")
+            debug_metadata = final_state.get("debug_metadata", {}) if debug else None
 
             self.session_memory[session_id] = {
                 "all_results": final_state.get("all_results", []),
@@ -562,9 +678,9 @@ class NeuroscienceAssistant:
             self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {response_text}"])
             if len(self.chat_history[session_id]) > 20:
                 self.chat_history[session_id] = self.chat_history[session_id][-20:]
-            return response_text
+            return (response_text, debug_metadata)
         except Exception as e:
             print(f"Error in handle_chat: {e}")
             import traceback
             traceback.print_exc()
-            return f"Error: {e}"
+            return (f"Error: {e}", None)
