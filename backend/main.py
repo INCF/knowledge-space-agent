@@ -147,6 +147,32 @@ async def reset_session(payload: Dict[str, str]):
     return {"status": "ok", "session_id": sid, "message": "Session cleared"}
 
 
+@app.get("/api/sessions", tags=["Chat"])
+async def list_sessions():
+    """List all known session IDs with message counts."""
+    sessions = assistant.storage.list_sessions()
+    return {
+        "sessions": [
+            {"session_id": sid, "message_count": len(assistant.storage.get_history(sid))}
+            for sid in sessions
+        ],
+        "total": len(sessions),
+    }
+
+
+@app.get("/api/cache/stats", tags=["General"])
+async def cache_stats():
+    """Return response-cache statistics."""
+    return assistant.cache.stats()
+
+
+@app.post("/api/cache/clear", tags=["General"])
+async def cache_clear():
+    """Flush the response cache."""
+    assistant.cache.clear()
+    return {"status": "ok", "message": "Cache cleared"}
+
+
 # Entry point
 if __name__ == "__main__":
     env = os.getenv("ENVIRONMENT", "production").lower()
