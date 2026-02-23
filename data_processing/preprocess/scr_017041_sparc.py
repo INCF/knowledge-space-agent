@@ -2,6 +2,14 @@ import json
 import re
 from google.cloud import storage
 from bs4 import BeautifulSoup
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,
+    length_function=len,
+    separators=["\n\n", "\n", ". ", " ", ""]
+)
 
 INPUT_GCS_PATH   = "ks_datasets/raw_dataset/data_sources/scr_017041_sparc.json"
 OUTPUT_GCS_PATH  = "ks_datasets/preprocessed_data/scr_017041_sparc.json"
@@ -31,15 +39,16 @@ def preprocess_record(rec: dict) -> dict:
     title        = dc.get("title", "")
     description  = dc.get("description", "")
 
-    chunk_parts = [
-        org_name,
-        item_name,
-        safe_join(keywords),
-        clean_html(summary),
-        title,
-        clean_html(description),
+    science_tags = [
+        f"Organization:{org_name}" if org_name else "",
+        f"Item:{item_name}" if item_name else "",
+        f"Keywords:{safe_join(keywords)}" if keywords else "",
+        f"Title:{title}" if title else ""
     ]
-    chunk = "\n".join(p for p in chunk_parts if p)
+    science_context_header = "\n".join(t for t in science_tags if t)
+    
+    desc_text = "\n".join(p for p in [clean_html(summary), clean_html(description)] if p)
+    desc_chunks = text_splitter.split_text(desc_text)
 
     meta = {
         "id": rec_id,
@@ -71,7 +80,15 @@ def preprocess_record(rec: dict) -> dict:
     for idx, u in enumerate(urls_unique, start=1):
         meta[f"identifier{idx}"] = u
 
-    return {"chunk": chunk, "metadata_filters": meta}
+    out = []
+    if not desc_chunks:
+        out.append({"chunk": science_context_header, "metadata_filters": meta})
+    else:
+        for index, text_block in enumerate(desc_chunks):
+            focused_semantic_chunk = f"{science_context_header}\n--\nExcerpt part{index+1}:\n{text_block}"
+            out.append({"chunk": focused_semantic_chunk, "metadata_filters": meta})
+            
+    return out
 
 client = storage.Client()
 
@@ -79,7 +96,9 @@ in_bucket, in_blob = INPUT_GCS_PATH.split("/", 1)
 raw = client.bucket(in_bucket).blob(in_blob).download_as_text()
 records = json.loads(raw)
 
-processed = [preprocess_record(r) for r in records]
+processed = []
+for r in records:
+    processed.extend(preprocess_record(r))
 
 # printing sample
 print("Sample:", json.dumps(processed[0], indent=2, ensure_ascii=False))
@@ -93,8 +112,9 @@ client.bucket(out_bucket).blob(out_blob).upload_from_string(
 print(f"Uploaded {len(processed)} records to gs://{OUTPUT_GCS_PATH}")
 
 
-"""  {
-  "chunk": "Mayo\nIntracranial EEG Epilepsy - Study 3\nepilepsy; eeg; intracranial; grid electrodes; strip electrodes; depth electrodes; seizure\nThe patient is a right-handed, 21-year old male who was admitted to the epilepsy monitoring unit for **intracranial monitoring**. The age at onset was 13 years old.\n\nThese data are from a 6 x 8 grid that was placed over the right frontal region, two 4 x 6 grids placed over the right temporal lobe and right parietal region, respectively, a 4-contact strip wrapped beneath the right anterior temporal lobe, a 4-contact strip wrapped beneath the right posterior temporal lobe, and a 4-contact depth electrode inserted in the anterior temporal region.\n \nThis is an abnormal computer-assisted prolonged intracranial EEG monitoring session due to the presence of frequent independent right frontal, right parietal and right temporal epileptiform discharges. During the monitoring session, the patient had a total of **eleven seizures, including nine clinical seizures and two seizures which were subclinical**. The first six seizures showed a diffuse ictal onset over the right frontal and right temporal grids. The last five seizures showed either a focal ictal onset simultaneously from the right anterior temporal strip and the posterior superior region of the right frontal grid, or focal onset from these two foci independently. These findings could be consistent with a localization-related epilepsy with seizure onset in the right frontotemporal neocortex.\n \nThe patient underwent surgery of reopening the right forntotemporoparietal craniotomy and removing the subdural grid electrodes, then a **right anterior-superior frontocortical resection, a right temporal lobectomy, and a right amygdalohippocampectomy**. Pathology samples of leptomeningeal and focal parenchymal lymphohistiocytic infiltrate consistent with grid/electrode placement. Mild subpial and subcortical gliosis. The patient also underwent surgery for a right mesial temporal lobe resection. Pathology samples of mesial temporal structures with focal parenchymal macrophage aggregate consistent with electrode placement. **Mild subpial and subcortical gliosis**.\nIntracranial EEG Epilepsy - Study 3\nData for a patient with epilepsy obtained for clinical treatment and collected for research, consisting of a large intracranial EEG dataset (grid, strip, and depth electrodes) with multiple seizures.",
+"""
+{
+  "chunk": "Organization:Mayo\nItem:Intracranial EEG Epilepsy - Study 3\nKeywords:epilepsy; eeg; intracranial; grid electrodes; strip electrodes; depth electrodes; seizure\nTitle:Intracranial EEG Epilepsy - Study 3\n--\nExcerpt part1:\nThe patient is a right-handed, 21-year old male who was admitted to the epilepsy monitoring unit for **intracranial monitoring**. The age at onset was 13 years old.",
   "metadata_filters": {
     "id": 14,
     "contributors": [
@@ -126,4 +146,5 @@ print(f"Uploaded {len(processed)} records to gs://{OUTPUT_GCS_PATH}")
     "identifier": "https://doi.org/10.26275/psj7-wggf"
   }
 }
-Uploaded 344 records to gs://ks_datasets/preprocessed_data/scr_017041_sparc.json"""
+Uploaded 344 records to gs://ks_datasets/preprocessed_data/scr_017041_sparc.json
+"""
