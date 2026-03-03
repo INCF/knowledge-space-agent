@@ -38,3 +38,11 @@ dev = [
     "flake8>=6.0.0",
     "mypy>=1.0.0",
 ]
+
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]

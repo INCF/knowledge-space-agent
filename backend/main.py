@@ -1,18 +1,19 @@
 # main.py
+import asyncio
+import json
 import os
 import time
-import asyncio
-from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any, Dict, Optional
 
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import uvicorn
-import json
 
-from agents import NeuroscienceAssistant
+# from agents import NeuroscienceAssistant
+from backend.agents import NeuroscienceAssistant
 
 load_dotenv()
 
@@ -34,12 +35,11 @@ app.add_middleware(
 # Initialize the assistant with vector search agent on startup
 assistant = NeuroscienceAssistant()
 
+
 # Models
 class ChatMessage(BaseModel):
     query: str = Field(..., description="The user's query")
-    session_id: Optional[str] = Field(
-        default="default", description="Session ID"
-    )
+    session_id: Optional[str] = Field(default="default", description="Session ID")
     reset: Optional[bool] = Field(
         default=False,
         description="If true, clears server-side session history before handling the message",
@@ -53,10 +53,13 @@ class ChatResponse(BaseModel):
 
 # Lightweight health helpers
 
+
 def _vector_check_sync() -> bool:
-    
+
     try:
-        from retrieval import Retriever  # local import to avoid import penalty on startup
+        from retrieval import \
+            Retriever  # local import to avoid import penalty on startup
+
         r = Retriever()
         return bool(getattr(r, "is_enabled", False))
     except Exception:
@@ -64,6 +67,7 @@ def _vector_check_sync() -> bool:
 
 
 # Routes
+
 
 @app.get("/", tags=["General"])
 async def root():
@@ -75,7 +79,7 @@ async def health_check():
     """Cheap health for Docker healthcheck / load balancers."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "service": "knowledge-space-agent-backend",
         "version": "2.0.0",
     }
@@ -98,14 +102,18 @@ async def health():
 
     components = {
         "vector_search": "enabled" if vector_enabled else "disabled",
-        "llm": "enabled" if (os.getenv("GOOGLE_API_KEY") or os.getenv("GCP_PROJECT_ID")) else "disabled",
+        "llm": (
+            "enabled"
+            if (os.getenv("GOOGLE_API_KEY") or os.getenv("GCP_PROJECT_ID"))
+            else "disabled"
+        ),
         "keyword_search": "enabled",
     }
     return {
         "status": "healthy",
         "version": "2.0.0",
         "components": components,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -122,7 +130,7 @@ async def chat_endpoint(msg: ChatMessage):
         metadata = {
             "process_time": process_time,
             "session_id": msg.session_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "reset": bool(msg.reset),
         }
         return ChatResponse(response=response_text, metadata=metadata)
@@ -136,8 +144,6 @@ async def chat_endpoint(msg: ChatMessage):
             response=f"Error: {e}",
             metadata={"error": True, "session_id": msg.session_id},
         )
-
-
 
 
 @app.post("/api/session/reset", tags=["Chat"])
@@ -154,7 +160,7 @@ if __name__ == "__main__":
         "main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
-        reload=True, 
+        reload=True,
         log_level="info",
         proxy_headers=True,
     )
