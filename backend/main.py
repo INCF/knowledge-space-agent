@@ -8,12 +8,17 @@ from typing import Any, Dict, Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # from agents import NeuroscienceAssistant
 from backend.agents import NeuroscienceAssistant
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
@@ -23,6 +28,17 @@ app = FastAPI(
     description="Neuroscience Dataset Discovery Assistant",
     version="2.0.0",
 )
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please slow down."},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,7 +134,8 @@ async def health():
 
 
 @app.post("/api/chat", response_model=ChatResponse, tags=["Chat"])
-async def chat_endpoint(msg: ChatMessage):
+@limiter.limit("10/minute")
+async def chat_endpoint(request: Request, msg: ChatMessage):
     try:
         start_time = time.time()
         response_text = await assistant.handle_chat(

@@ -28,6 +28,7 @@ dependencies = [
     "torch>=2.7.1",
     "tqdm>=4.67.1",
     "uvicorn>=0.34.3",
+    "slowapi = ^0.1.9"
 ]
 
 [project.optional-dependencies]

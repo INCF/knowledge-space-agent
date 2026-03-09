@@ -8,8 +8,8 @@ from typing import Dict, List, Optional, TypedDict, Any
 
 from langgraph.graph import StateGraph, END
 
-from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
-from retrieval import Retriever
+from backend.ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
+from backend.retrieval import Retriever
 
 #  LLM (Gemini) client setup 
 try:
