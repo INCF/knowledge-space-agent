@@ -56,8 +56,8 @@ class ChatResponse(BaseModel):
 def _vector_check_sync() -> bool:
     
     try:
-        from retrieval import Retriever  # local import to avoid import penalty on startup
-        r = Retriever()
+        from retrieval import get_retriever  # local import to avoid import penalty on startup
+        r = get_retriever()
         return bool(getattr(r, "is_enabled", False))
     except Exception:
         return False
@@ -131,9 +131,9 @@ async def chat_endpoint(msg: ChatMessage):
             status_code=504,
             detail="Request timed out. Please try with a simpler query.",
         )
-    except Exception as e:
+    except Exception:
         return ChatResponse(
-            response=f"Error: {e}",
+            response="Something went wrong. Please try again.",
             metadata={"error": True, "session_id": msg.session_id},
         )
 
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         "main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
-        reload=True, 
+        reload=env == "development",
         log_level="info",
         proxy_headers=True,
     )

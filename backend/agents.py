@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, TypedDict, Any
 from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
-from retrieval import Retriever
+from retrieval import get_retriever
 
 #  LLM (Gemini) client setup 
 try:
@@ -352,7 +352,7 @@ class KSSearchAgent:
 
 class VectorSearchAgent:
     def __init__(self):
-        self.retriever = Retriever()
+        self.retriever = get_retriever()
         self.is_enabled = self.retriever.is_enabled
 
     async def run(self, query: str, want: int, context: Optional[Dict] = None) -> List[dict]:
@@ -460,13 +460,24 @@ async def generate_final_response(state: AgentState) -> AgentState:
             "- datasets from EBRAINS \n"
         )
         return {**state, "final_response": response}
+    
     raw_results = state.get("final_results", [])
+    
+    # Handle empty retrieval results
+    if not raw_results:
+        return {**state, "final_response": "No matching datasets found. Try a different search query."}
+    
     start_number = state.get("__start_number__", 1)
     prev_text = state.get("__previous_text__", "")
     print(f"Generating response for {len(raw_results)} final results, start={start_number}, intents={intents}")
-    response = await call_gemini_for_final_synthesis(
-        state["effective_query"], raw_results, intents, start_number=start_number, previous_text=prev_text
-    )
+    
+    try:
+        response = await call_gemini_for_final_synthesis(
+            state["effective_query"], raw_results, intents, start_number=start_number, previous_text=prev_text
+        )
+    except Exception:
+        response = "Unable to process your request. Please try again."
+    
     return {**state, "final_response": response}
 
 
