@@ -131,9 +131,9 @@ async def chat_endpoint(msg: ChatMessage):
             status_code=504,
             detail="Request timed out. Please try with a simpler query.",
         )
-    except Exception as e:
+    except Exception:
         return ChatResponse(
-            response=f"Error: {e}",
+            response="Something went wrong. Please try again.",
             metadata={"error": True, "session_id": msg.session_id},
         )
 
