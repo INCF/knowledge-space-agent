@@ -2,6 +2,38 @@
 
 A web application that provides an AI-powered chatbot interface for dataset discovery, using Google Gemini API on the backend and a React-based frontend.
 
+## Architecture Overview
+
+The KnowledgeSpace AI Agent is a Retrieval-Augmented Generation (RAG) system designed for neuroscience dataset discovery. It combines keyword search, semantic retrieval, and large language model reasoning to surface relevant datasets across heterogeneous sources.
+
+The system consists of the following core components:
+
+- **React Frontend**  
+  - Provides a chat-based interface for interacting with the dataset discovery agent.
+
+- **FastAPI Backend**  
+  - Orchestrates LLM-based reasoning (Gemini), keyword search (Elasticsearch), and semantic search (Vertex AI Matching Engine).
+
+- **Data Processing Pipeline**  
+  - Scrapes and normalizes neuroscience metadata, stores structured records in BigQuery, and indexes vector embeddings in Vertex AI for retrieval.
+
+## System Flow (High-Level)
+
+The following diagram shows the high-level request and data flow through the system:
+
+```mermaid
+flowchart LR
+    User --> Frontend
+    Frontend --> Backend
+    Backend -->|Keyword Search| Elasticsearch
+    Backend -->|Semantic Search| VertexAI
+    Backend -->|LLM Reasoning| Gemini
+    Elasticsearch --> Backend
+    VertexAI --> Backend
+    Gemini --> Backend
+    Backend --> Frontend
+```
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -65,6 +97,8 @@ Create a file named `.env` in the project root based on `.env.template`. You can
 **Option 1: Google API Key (Recommended for development)**
 
 - Set `GOOGLE_API_KEY` in your `.env` file
+> You can generate a Gemini API key from **Google AI Studio**:  
+> https://aistudio.google.com/app/apikey
 
 **Option 2: Vertex AI (Recommended for production)**
 
@@ -139,6 +173,10 @@ The backend requires specific environment variables to connect to **Google Cloud
 
 
 ## Running the Application
+> ⚠️ **Note on Port Configuration**
+>
+> - Local development: The React development server runs on port **5000**
+> - Docker / Nginx deployment: The containerized frontend is exposed on port **3000**
 
 #### Backend (port 8000)
 
