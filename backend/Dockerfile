@@ -5,7 +5,7 @@ RUN pip install uv
 
 COPY pyproject.toml ./
 COPY .env ./
-COPY backend/service-account.json ./service-account.json
+COPY backend/service-account.json.example ./service-account.json
 
 
 RUN UV_HTTP_TIMEOUT=300 uv sync
