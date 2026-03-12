@@ -482,9 +482,14 @@ async def generate_final_response(state: AgentState) -> AgentState:
 
 
 class NeuroscienceAssistant:
-    def __init__(self):
-        self.chat_history: Dict[str, List[str]] = {}
-        self.session_memory: Dict[str, Dict[str, Any]] = {}
+    def __init__(self, storage=None, cache=None):
+        from chat_storage import create_storage
+        from response_cache import create_cache
+
+        self.storage: "ChatStorage" = storage or create_storage()
+        self.cache: "ResponseCache" = cache or create_cache()
+        # Large result lists stay in-memory (too bulky for SQLite).
+        self._results_buffer: Dict[str, List[dict]] = {}
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -501,19 +506,31 @@ class NeuroscienceAssistant:
         return workflow.compile()
 
     def reset_session(self, session_id: str):
-        self.chat_history.pop(session_id, None)
-        self.session_memory.pop(session_id, None)
+        self.storage.clear(session_id)
+        self.storage.clear_session_memory(session_id)
+        self._results_buffer.pop(session_id, None)
 
+    def _append_and_trim(self, session_id: str, user_msg: str, assistant_msg: str):
+        """Append user+assistant turns and keep history at most 20 entries."""
+        self.storage.append(session_id, user_msg)
+        self.storage.append(session_id, assistant_msg)
+        history = self.storage.get_history(session_id)
+        if len(history) > 20:
+            self.storage.set_history(session_id, history[-20:])
 
     async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
         try:
             if reset:
                 self.reset_session(session_id)
-            if session_id not in self.chat_history:
-                self.chat_history[session_id] = []
+
+            history = self.storage.get_history(session_id)
+
+            # Merge persisted memory with in-memory results buffer
+            mem = self.storage.get_session_memory(session_id)
+            if session_id in self._results_buffer:
+                mem["all_results"] = self._results_buffer[session_id]
 
             more_count = _is_more_query(query)
-            mem = self.session_memory.get(session_id, {})
             if more_count is not None or (query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"}):
                 all_results = mem.get("all_results", [])
                 if not all_results:
@@ -527,7 +544,7 @@ class NeuroscienceAssistant:
                 intents = mem.get("intents", [QueryIntent.DATA_DISCOVERY.value])
                 effective_query = mem.get("effective_query", "")
                 prev_text = mem.get("last_text", "")
-                
+
                 text = await call_gemini_for_final_synthesis(
                     effective_query, batch, intents, start_number=start + 1, previous_text=prev_text
                 )
@@ -536,16 +553,22 @@ class NeuroscienceAssistant:
                     "page_size": page_size,
                     "last_text": f"{prev_text}\n\n{text}"[-12000:],
                 })
-                self.session_memory[session_id] = mem
-                self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {text}"])
-                if len(self.chat_history[session_id]) > 20:
-                    self.chat_history[session_id] = self.chat_history[session_id][-20:]
+                self.storage.set_session_memory(session_id, mem)
+                self._append_and_trim(session_id, f"User: {query}", f"Assistant: {text}")
                 return text
+
+            # Check cache for exact-match hit
+            cached = self.cache.get(query, session_id=session_id)
+            if cached is not None:
+                response_text, _ = cached
+                print(f"[cache] HIT: {query[:50]}…")
+                self._append_and_trim(session_id, f"User: {query}", f"Assistant: {response_text}")
+                return response_text
 
             initial_state: AgentState = {
                 "session_id": session_id,
                 "query": query,
-                "history": self.chat_history[session_id][-10:],
+                "history": history[-10:],
                 "keywords": [],
                 "effective_query": "",
                 "intents": [],
@@ -560,19 +583,23 @@ class NeuroscienceAssistant:
             final_state = await self.graph.ainvoke(initial_state)
             response_text = final_state.get("final_response", "I encountered an unexpected empty response.")
 
-            self.session_memory[session_id] = {
-                "all_results": final_state.get("all_results", []),
+            # Persist lightweight session memory
+            self.storage.set_session_memory(session_id, {
                 "page": 1,
                 "page_size": 15,
                 "effective_query": final_state.get("effective_query", initial_state["query"]),
                 "keywords": final_state.get("keywords", []),
                 "intents": final_state.get("intents", [QueryIntent.DATA_DISCOVERY.value]),
                 "last_text": response_text,
-            }
+            })
+            # Keep bulky results in memory only
+            self._results_buffer[session_id] = final_state.get("all_results", [])
 
-            self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {response_text}"])
-            if len(self.chat_history[session_id]) > 20:
-                self.chat_history[session_id] = self.chat_history[session_id][-20:]
+            self._append_and_trim(session_id, f"User: {query}", f"Assistant: {response_text}")
+
+            # Store in cache for future identical queries
+            self.cache.put(query, response_text, session_id=session_id)
+
             return response_text
         except Exception as e:
             print(f"Error in handle_chat: {e}")
