@@ -1,0 +1,138 @@
+{
+    "description": "Sample neuroscience dataset entries for demonstration purposes only. These are simplified mock entries to help understand the data structure.",
+    "datasets": [
+        {
+            "id": "demo_001",
+            "title": "Mouse Hippocampus Electrophysiology Dataset",
+            "description": "Extracellular recordings from CA1 pyramidal neurons in freely moving mice during spatial navigation tasks. Includes spike times and local field potentials.",
+            "datasource_name": "DANDI Archive",
+            "species": [
+                "Mus musculus"
+            ],
+            "brain_regions": [
+                "Hippocampus",
+                "CA1"
+            ],
+            "technique": "Electrophysiology",
+            "data_format": [
+                "NWB"
+            ],
+            "license": "CC-BY-4.0",
+            "subjects": 12,
+            "authors": [
+                "Smith, J.",
+                "Chen, L.",
+                "Garcia, M."
+            ],
+            "year": 2023,
+            "url": "https://dandiarchive.org/example/001"
+        },
+        {
+            "id": "demo_002",
+            "title": "Human fMRI Visual Cortex Responses",
+            "description": "BOLD fMRI responses to natural images in human visual cortex. Includes V1, V2, V3, and V4 ROI data with stimulus timing.",
+            "datasource_name": "OpenNeuro",
+            "species": [
+                "Homo sapiens"
+            ],
+            "brain_regions": [
+                "Visual Cortex",
+                "V1",
+                "V2",
+                "V4"
+            ],
+            "technique": "fMRI",
+            "data_format": [
+                "BIDS",
+                "NIfTI"
+            ],
+            "license": "CC0",
+            "subjects": 24,
+            "authors": [
+                "Johnson, A.",
+                "Williams, B."
+            ],
+            "year": 2024,
+            "url": "https://openneuro.org/example/002"
+        },
+        {
+            "id": "demo_003",
+            "title": "Rat Prefrontal Cortex Single-Unit Recordings",
+            "description": "Single-unit recordings from medial prefrontal cortex during decision-making tasks. Includes behavioral timestamps and neural spike data.",
+            "datasource_name": "NeuroElectro",
+            "species": [
+                "Rattus norvegicus"
+            ],
+            "brain_regions": [
+                "Prefrontal Cortex",
+                "mPFC"
+            ],
+            "technique": "Single-unit recording",
+            "data_format": [
+                "NWB",
+                "HDF5"
+            ],
+            "license": "PDDL",
+            "subjects": 8,
+            "authors": [
+                "Lee, K.",
+                "Brown, R.",
+                "Davis, S.",
+                "Miller, T."
+            ],
+            "year": 2023,
+            "url": "https://neuroelectro.org/example/003"
+        },
+        {
+            "id": "demo_004",
+            "title": "Primate Motor Cortex Neural Population Dataset",
+            "description": "Multi-electrode array recordings from primary motor cortex during reaching movements. Contains population spiking activity and hand kinematics.",
+            "datasource_name": "Brain/MINDS",
+            "species": [
+                "Macaca mulatta"
+            ],
+            "brain_regions": [
+                "Motor Cortex",
+                "M1"
+            ],
+            "technique": "Multi-electrode array",
+            "data_format": [
+                "NWB"
+            ],
+            "license": "CC-BY-4.0",
+            "subjects": 2,
+            "authors": [
+                "Tanaka, Y.",
+                "Yamamoto, H."
+            ],
+            "year": 2022,
+            "url": "https://brainminds.org/example/004"
+        },
+        {
+            "id": "demo_005",
+            "title": "Human EEG Sleep Stage Dataset",
+            "description": "High-density EEG recordings during sleep with expert-labeled sleep stages. Includes 64-channel recordings across full night sessions.",
+            "datasource_name": "EBRAINS",
+            "species": [
+                "Homo sapiens"
+            ],
+            "brain_regions": [
+                "Whole brain"
+            ],
+            "technique": "EEG",
+            "data_format": [
+                "BIDS",
+                "EDF"
+            ],
+            "license": "CC-BY-SA-4.0",
+            "subjects": 50,
+            "authors": [
+                "Mueller, F.",
+                "Schmidt, P.",
+                "Weber, A."
+            ],
+            "year": 2024,
+            "url": "https://ebrains.eu/example/005"
+        }
+    ]
+}
