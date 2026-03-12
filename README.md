@@ -112,11 +112,11 @@ Create a file named `.env` in the project root based on `.env.template`. You can
 # Create a virtual environment using UV
 uv venv
 
-# Activate it:
-# On Windows (cmd):
- .venv/bin/activate
+**Windows (Command Prompt):**
+.\venv\Scripts\activate
 
-```
+**Windows (PowerShell):**
+.\venv\Scripts\Activate.ps1
 
 ### 5. Install backend dependencies
 
