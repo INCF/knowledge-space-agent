@@ -209,6 +209,44 @@ docker run -p 3000:3000 knowledge-space-frontend
 
 This repository provides a set of Python scripts and modules to ingest, clean, and enrich neuroscience metadata from Google Cloud Storage, as well as scrape identifiers and references from linked resources.
 
+
+
+
+## System Flow (High-Level)
+
+The following diagram shows the high-level request and data flow through the system:
+
+flowchart LR
+
+    A[User Query] --> B[Parsing and Classification using LLM]
+
+    B --> C[Identify Filters]
+    B --> D[Keywords for Ontology]
+
+    C --> E{Decision}
+
+    E -->|No Retrieval Needed| F[No Retrieval - General Output]
+
+    E -->|Retrieval Needed| G[Query Enhancement]
+
+    G --> H[Hybrid Retrieval]
+
+    H --> I[Vectorstore Search]
+    I --> J[Retrieved Chunks]
+
+    J --> K[LLM with Prompt Template]
+
+    K --> L[User Output]
+
+    %% Ontology path
+    D --> M[Search using Neo4j]
+    M --> N[Retrieved Doc IDs]
+    N --> O[API Call and Reranking based on Filters]
+    O --> H
+
+    %% Feedback loop
+    L --> P[Update Memory based on Query]
+    P --> B
 ### Key Features
 
 - **Elasticsearch Scraping**: The `ksdata_scraping.py` script harvests raw dataset records directly from our Elasticsearch cluster and writes them to GCS. It uses a Point-In-Time (PIT) scroll to page through each index safely, authenticating via credentials stored in your environment.
