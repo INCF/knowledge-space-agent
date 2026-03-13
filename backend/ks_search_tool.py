@@ -446,7 +446,7 @@ def _perform_search(data_source_id: str, query: str, filters: dict, all_configs:
     
     
 
- # Deduplication feature 
+ # Deduplication feature
 def normalize_url(url: str) -> str:
     """Normalize URLs by stripping query params and fragments."""
     if not url:
@@ -466,8 +466,15 @@ def normalize_title(title: str) -> str:
     return title.strip()
 
 
+def titles_reordered_match(t1: str, t2: str) -> bool:
+    """Detect titles with same words but different order."""
+    tokens1 = set(t1.split())
+    tokens2 = set(t2.split())
+    return tokens1 == tokens2
+
+
 def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
-    """Deduplicate datasets using canonical ID, normalized URL, and fuzzy title."""
+    """Deduplicate datasets using canonical ID, normalized URL, fuzzy title, and reordered title detection."""
 
     if not all_datasets:
         return []
@@ -479,13 +486,9 @@ def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
     for dataset in all_datasets:
         metadata = dataset.get("metadata", {}) or dataset.get("_source", {})
 
-        # --- Canonical ID handling (safe) ---
+        # Canonical ID
         dataset_id = metadata.get("id") or metadata.get("dataset_id") or dataset.get("_id")
-
-        if dataset_id:
-            dataset_id = str(dataset_id).lower()
-        else:
-            dataset_id = ""
+        dataset_id = str(dataset_id).lower() if dataset_id else ""
 
         datasource_id = str(dataset.get("datasource_id") or "default_source").lower()
         canonical_key = f"{datasource_id}:{dataset_id}"
@@ -496,7 +499,7 @@ def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
         if dataset_id:
             seen_canonical.add(canonical_key)
 
-        # --- URL deduplication ---
+        # URL deduplication
         raw_url = dataset.get("primary_link", "")
         normalized_url = normalize_url(raw_url)
 
@@ -506,7 +509,7 @@ def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
         if normalized_url:
             seen_urls.add(normalized_url)
 
-        # --- Title normalization ---
+        # Title normalization
         title = normalize_title(
             dataset.get("title")
             or dataset.get("title_guess")
@@ -514,8 +517,8 @@ def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
             or ""
         )
 
-        # --- Fuzzy title matching ---
         duplicate_found = False
+
         if title:
             for existing in cleaned:
                 existing_title = normalize_title(
@@ -527,9 +530,15 @@ def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
                 if not existing_title:
                     continue
 
+                # Fuzzy match
                 similarity = SequenceMatcher(None, title, existing_title).ratio()
 
                 if similarity > 0.93:
+                    duplicate_found = True
+                    break
+
+                # Reordered title match
+                if titles_reordered_match(title, existing_title):
                     duplicate_found = True
                     break
 
@@ -537,9 +546,6 @@ def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
             cleaned.append(dataset)
 
     return cleaned
-#  Enf deduplication feature 
-
-
 
     
 @tool(args_schema=BaseModel)
