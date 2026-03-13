@@ -4,10 +4,10 @@ import json
 import requests
 import asyncio
 import aiohttp
-from typing import Dict, Optional, Set, Union, List, Any, Iterable
-import re
-from urllib.parse import urlparse
+from typing import List
 from difflib import SequenceMatcher
+from urllib.parse import urlparse, urlunparse
+import re
 
 
 def tool(args_schema):
@@ -443,8 +443,105 @@ def _perform_search(data_source_id: str, query: str, filters: dict, all_configs:
     except requests.RequestException as e:
         print(f"  -> Error searching {data_source_id}: {e}")
         return []
+    
+    
+
+ # Deduplication feature 
+def normalize_url(url: str) -> str:
+    """Normalize URLs by stripping query params and fragments."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    normalized = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+    return normalized.lower().rstrip("/")
 
 
+def normalize_title(title: str) -> str:
+    """Normalize title: lowercase, strip punctuation, extra spaces."""
+    if not title:
+        return ""
+    title = title.lower()
+    title = re.sub(r"[^\w\s]", "", title)
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
+    """Deduplicate datasets using canonical ID, normalized URL, and fuzzy title."""
+
+    if not all_datasets:
+        return []
+
+    cleaned = []
+    seen_canonical = set()
+    seen_urls = set()
+
+    for dataset in all_datasets:
+        metadata = dataset.get("metadata", {}) or dataset.get("_source", {})
+
+        # --- Canonical ID handling (safe) ---
+        dataset_id = metadata.get("id") or metadata.get("dataset_id") or dataset.get("_id")
+
+        if dataset_id:
+            dataset_id = str(dataset_id).lower()
+        else:
+            dataset_id = ""
+
+        datasource_id = str(dataset.get("datasource_id") or "default_source").lower()
+        canonical_key = f"{datasource_id}:{dataset_id}"
+
+        if dataset_id and canonical_key in seen_canonical:
+            continue
+
+        if dataset_id:
+            seen_canonical.add(canonical_key)
+
+        # --- URL deduplication ---
+        raw_url = dataset.get("primary_link", "")
+        normalized_url = normalize_url(raw_url)
+
+        if normalized_url and normalized_url in seen_urls:
+            continue
+
+        if normalized_url:
+            seen_urls.add(normalized_url)
+
+        # --- Title normalization ---
+        title = normalize_title(
+            dataset.get("title")
+            or dataset.get("title_guess")
+            or metadata.get("title")
+            or ""
+        )
+
+        # --- Fuzzy title matching ---
+        duplicate_found = False
+        if title:
+            for existing in cleaned:
+                existing_title = normalize_title(
+                    existing.get("title")
+                    or existing.get("title_guess")
+                    or ""
+                )
+
+                if not existing_title:
+                    continue
+
+                similarity = SequenceMatcher(None, title, existing_title).ratio()
+
+                if similarity > 0.93:
+                    duplicate_found = True
+                    break
+
+        if not duplicate_found:
+            cleaned.append(dataset)
+
+    return cleaned
+#  Enf deduplication feature 
+
+
+
+    
 @tool(args_schema=BaseModel)
 def smart_knowledge_search(
     query: Optional[str] = None,
