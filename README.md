@@ -215,7 +215,7 @@ This repository provides a set of Python scripts and modules to ingest, clean, a
 ## System Flow (High-Level)
 
 The following diagram shows the high-level request and data flow through the system:
-
+```mermaid
 flowchart LR
 
     A[User Query] --> B[Parsing and Classification using LLM]
@@ -247,6 +247,7 @@ flowchart LR
     %% Feedback loop
     L --> P[Update Memory based on Query]
     P --> B
+```
 ### Key Features
 
 - **Elasticsearch Scraping**: The `ksdata_scraping.py` script harvests raw dataset records directly from our Elasticsearch cluster and writes them to GCS. It uses a Point-In-Time (PIT) scroll to page through each index safely, authenticating via credentials stored in your environment.
