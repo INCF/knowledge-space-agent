@@ -20,6 +20,8 @@ const App: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadError, setUploadError] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,9 +81,28 @@ Try asking me something like:
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Show a temporary "reading" state
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setUploadState('error');
+      setUploadError('Only image files are supported.');
+      setTimeout(() => setUploadState('idle'), 3000);
+      e.target.value = '';
+      return;
+    }
+
+    // Validate file size (max 10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadState('error');
+      setUploadError('Image must be smaller than 10 MB.');
+      setTimeout(() => setUploadState('idle'), 3000);
+      e.target.value = '';
+      return;
+    }
+
+    setUploadState('uploading');
+    setUploadError('');
     setIsLoading(true);
-    
+
     const formData = new FormData();
     formData.append('file', file);
 
@@ -91,24 +112,38 @@ Try asking me something like:
         body: formData,
       });
 
-      if (!response.ok) throw new Error('OCR failed');
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail?.detail || `Server error ${response.status}`);
+      }
 
       const data = await response.json();
-      
-      // Put the extracted text into the input box for the user
+
+      if (!data.extracted_text || !data.extracted_text.trim()) {
+        throw new Error('No readable text found in the image.');
+      }
+
       setInputValue(data.extracted_text);
-    } catch (error) {
-      console.error("Upload error:", error);
+      setUploadState('success');
+      // Reset success indicator after 2 s
+      setTimeout(() => setUploadState('idle'), 2000);
+    } catch (error: unknown) {
+      console.error('Upload error:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to extract text from the image.';
+      setUploadState('error');
+      setUploadError(msg);
       const errorMessage: Message = {
         id: Date.now().toString(),
         type: 'error',
-        content: 'Failed to extract text from the image. Please try a clearer screenshot.',
+        content: `Image upload failed: ${msg} Please try a clearer screenshot.`,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
+      // Reset error indicator after 3 s
+      setTimeout(() => setUploadState('idle'), 3000);
     } finally {
       setIsLoading(false);
-      // Reset the file input so the same file can be uploaded again if needed
+      // Reset the file input so the same file can be uploaded again
       e.target.value = '';
     }
   };
@@ -231,13 +266,26 @@ Try asking me something like:
         <footer className="input-section">
           <div className="input-container">
            <div className="input-wrapper" style={{ alignItems: 'flex-end' }}>
-  <input 
-    type="file" id="image-upload" accept="image/*" hidden 
-    onChange={handleImageUpload} disabled={isLoading}
+  <input
+    type="file" id="image-upload" accept="image/*" hidden
+    onChange={handleImageUpload} disabled={isLoading || uploadState === 'uploading'}
   />
-  
-  <label htmlFor="image-upload" className={`action-btn upload-btn ${isLoading ? 'disabled' : ''}`}>
-    <i className="fas fa-paperclip"></i>
+
+  <label
+    htmlFor="image-upload"
+    className={`action-btn upload-btn upload-btn--${uploadState} ${(isLoading || uploadState === 'uploading') ? 'disabled' : ''}`}
+    title={
+      uploadState === 'uploading' ? 'Extracting text…' :
+      uploadState === 'success'   ? 'Text extracted!' :
+      uploadState === 'error'     ? uploadError || 'Upload failed' :
+      'Upload an image to extract search terms'
+    }
+    aria-label="Upload image for OCR"
+  >
+    {uploadState === 'uploading' && <i className="fas fa-spinner fa-spin"></i>}
+    {uploadState === 'success'   && <i className="fas fa-check"></i>}
+    {uploadState === 'error'     && <i className="fas fa-exclamation-triangle"></i>}
+    {uploadState === 'idle'      && <i className="fas fa-paperclip"></i>}
   </label>
 
   {/* Dynamic Textarea */}

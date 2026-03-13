@@ -164,6 +164,41 @@ html, body {
     transform: translateY(-1px);
 }
 
+/* Upload button state variants */
+.upload-btn {
+    border: 2px solid transparent;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    position: relative;
+}
+
+.upload-btn--idle {
+    color: #64748b;
+}
+
+.upload-btn--uploading {
+    background: rgba(102, 126, 234, 0.12);
+    color: #667eea;
+    cursor: wait;
+    pointer-events: none;
+}
+
+.upload-btn--success {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.4);
+}
+
+.upload-btn--error {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.upload-btn.disabled {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
 /* Chat Container */
 .chat-container {
     flex: 1;
