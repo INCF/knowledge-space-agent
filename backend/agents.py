@@ -83,6 +83,8 @@ def _get_genai_client():
 FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
 FLASH_LITE_MODEL = os.getenv("GEMINI_FLASH_LITE_MODEL", "gemini-2.5-flash-lite")
 
+MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "2000"))
+
 
 # Query intent/types 
 class QueryIntent(Enum):
@@ -507,6 +509,13 @@ class NeuroscienceAssistant:
 
     async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
         try:
+            query = query.strip()
+            if len(query) > MAX_QUERY_LENGTH:
+                return (
+                    f"Query too long ({len(query)} chars). "
+                    f"Please keep it under {MAX_QUERY_LENGTH} characters."
+                )
+
             if reset:
                 self.reset_session(session_id)
             if session_id not in self.chat_history:
