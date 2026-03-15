@@ -4,10 +4,10 @@ import json
 import requests
 import asyncio
 import aiohttp
-from typing import Dict, Optional, Set, Union, List, Any, Iterable
 import re
-from urllib.parse import urlparse
 from difflib import SequenceMatcher
+from typing import Dict, Optional, Set, Union, List, Any, Iterable
+from urllib.parse import urlparse, urlunparse
 
 
 def tool(args_schema):
@@ -443,6 +443,110 @@ def _perform_search(data_source_id: str, query: str, filters: dict, all_configs:
     except requests.RequestException as e:
         print(f"  -> Error searching {data_source_id}: {e}")
         return []
+    
+    
+    # Deduplication feature
+    
+def normalize_url(url: str) -> str:
+    """Normalize URLs by stripping query params and fragments."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    normalized = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+    return normalized.lower().rstrip("/")
+
+
+def normalize_title(title: str) -> str:
+    """Normalize title: lowercase, strip punctuation, extra spaces."""
+    if not title:
+        return ""
+    title = title.lower()
+    title = re.sub(r"[^\w\s]", "", title)
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def titles_reordered_match(t1: str, t2: str) -> bool:
+    """Detect titles with same words but different order."""
+    tokens1 = set(t1.split())
+    tokens2 = set(t2.split())
+    return tokens1 == tokens2
+
+
+def deduplicate_datasets(all_datasets: List[dict]) -> List[dict]:
+    """Deduplicate datasets using canonical ID, normalized URL, fuzzy title, and reordered title detection."""
+
+    if not all_datasets:
+        return []
+
+    cleaned = []
+    seen_canonical = set()
+    seen_urls = set()
+
+    for dataset in all_datasets:
+        metadata = dataset.get("metadata", {}) or dataset.get("_source", {})
+
+        # Canonical ID
+        dataset_id = metadata.get("id") or metadata.get("dataset_id") or dataset.get("_id")
+        dataset_id = str(dataset_id).lower() if dataset_id else ""
+
+        datasource_id = str(dataset.get("datasource_id") or "default_source").lower()
+        canonical_key = f"{datasource_id}:{dataset_id}"
+
+        if dataset_id and canonical_key in seen_canonical:
+            continue
+
+        if dataset_id:
+            seen_canonical.add(canonical_key)
+
+        # URL deduplication
+        raw_url = dataset.get("primary_link", "")
+        normalized_url = normalize_url(raw_url)
+
+        if normalized_url and normalized_url in seen_urls:
+            continue
+
+        if normalized_url:
+            seen_urls.add(normalized_url)
+
+        # Title normalization
+        title = normalize_title(
+            dataset.get("title")
+            or dataset.get("title_guess")
+            or metadata.get("title")
+            or ""
+        )
+
+        duplicate_found = False
+
+        if title:
+            for existing in cleaned:
+                existing_title = normalize_title(
+                    existing.get("title")
+                    or existing.get("title_guess")
+                    or ""
+                )
+
+                if not existing_title:
+                    continue
+
+                # Fuzzy match
+                similarity = SequenceMatcher(None, title, existing_title).ratio()
+
+                if similarity > 0.93:
+                    duplicate_found = True
+                    break
+
+                # Reordered title match
+                if titles_reordered_match(title, existing_title):
+                    duplicate_found = True
+                    break
+
+        if not duplicate_found:
+            cleaned.append(dataset)
+
+    return cleaned
+
 
 
 @tool(args_schema=BaseModel)
