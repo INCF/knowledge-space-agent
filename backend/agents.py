@@ -328,6 +328,8 @@ class AgentState(TypedDict):
     final_results: List[dict]
     all_results: List[dict]
     final_response: str
+    start_number: int
+    previous_text: str
 
 
 class KSSearchAgent:
@@ -469,8 +471,8 @@ async def generate_final_response(state: AgentState) -> AgentState:
         )
         return {**state, "final_response": response}
     raw_results = state.get("final_results", [])
-    start_number = state.get("__start_number__", 1)
-    prev_text = state.get("__previous_text__", "")
+    start_number = state.get("start_number", 1)
+    prev_text = state.get("previous_text", "")
     logger.info(
     "Generating response for %d final results, start=%d, intents=%s",
     len(raw_results),
@@ -555,8 +557,8 @@ class NeuroscienceAssistant:
                 "vector_results": [],
                 "final_results": [],
                 "all_results": [],
-                "__start_number__": 1,
-                "__previous_text__": "",
+                "start_number": 1,
+                "previous_text": "",
                 "final_response": "",
             }
             final_state = await self.graph.ainvoke(initial_state)
