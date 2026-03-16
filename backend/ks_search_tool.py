@@ -16,6 +16,150 @@ from typing import Dict, Optional, Set, Union, List, Any, Iterable
 import re
 from urllib.parse import urlparse
 from difflib import SequenceMatcher
+import math
+
+# --- Query Expansion for Neuroscience Terms ---
+QUERY_SYNONYMS = {
+    "mouse brain": [
+        "Rattus norvegicus",
+        "somatosensory cortex",
+        "cortex",
+        "hippocampus",
+    ],
+    "memory": ["hippocampus", "synaptic plasticity"],
+    "hippocampus": ["CA1", "CA3", "dentate gyrus"],
+    "eeg": ["electroencephalography"],
+    "fmri": ["functional magnetic resonance imaging", "BOLD"],
+}
+
+
+def expand_query(query: str) -> str:
+    if not query:
+        return ""
+    query_lower = query.lower()
+    expanded = [query_lower]
+    added_terms = set(expanded)
+
+    for phrase, synonyms in QUERY_SYNONYMS.items():
+        if phrase in query_lower:
+            for syn in synonyms:
+                if syn not in added_terms:
+                    expanded.append(syn)
+                    added_terms.add(syn)
+
+    for word in query_lower.split():
+        if word in QUERY_SYNONYMS:
+            for syn in QUERY_SYNONYMS[word]:
+                if syn not in added_terms:
+                    expanded.append(syn)
+                    added_terms.add(syn)
+
+    return " OR ".join([f'"{t}"' if " " in t else t for t in expanded])
+
+
+# --- Metadata Normalized Reranking ---
+def rerank_results_using_metadata(results: List[dict]) -> List[dict]:
+    """
+    Safely boosts semantic/keyword search scores using bounded metadata signals.
+    Employs min-max scaling and log-normalization so high citations/years
+    do not overpower the core relevance score.
+    """
+    if not results:
+        return []
+
+    # 1. Gather all raw metadata values across the batch to find min/max
+    years = []
+    citations_list = []
+
+    for r in results:
+        meta = r.get("metadata", {}) or {}
+
+        # Extract Year safely handling falsy 0s
+        y = meta.get("publication_year")
+        if y is None:
+            y = meta.get("year")
+
+        try:
+            if y is not None:
+                years.append(float(y))
+        except (ValueError, TypeError):
+            pass
+
+        # Extract Citations safely handling falsy 0s
+        c = meta.get("citations")
+        if c is None:
+            c = meta.get("citation_count")
+
+        try:
+            if c is not None:
+                citations_list.append(float(c))
+        except (ValueError, TypeError):
+            pass
+
+    # Find the bounds for scaling
+    min_year = min(years) if years else 0
+    max_year = max(years) if years else 0
+
+    min_cits_log = math.log10(min(citations_list) + 1) if citations_list else 0
+    max_cits_log = math.log10(max(citations_list) + 1) if citations_list else 0
+
+    # 2. Score and Boost each item
+    trusted_sources = {"allen brain atlas", "gensat", "ebrains"}
+
+    def calculate_boost(r: dict) -> float:
+        meta = r.get("metadata", {}) or {}
+
+        # -- Year Boost (Max +10%)
+        year_boost = 0.0
+        y = meta.get("publication_year")
+        if y is None:
+            y = meta.get("year")
+
+        if y is not None and max_year > min_year:
+            try:
+                # 0.0 to 1.0 based on how new it is in this batch
+                y_norm = (float(y) - min_year) / (max_year - min_year)
+                year_boost = y_norm * 0.10
+            except (ValueError, TypeError):
+                pass
+
+        # -- Citations Boost (Max +15%)
+        cit_boost = 0.0
+        c = meta.get("citations")
+        if c is None:
+            c = meta.get("citation_count")
+
+        if c is not None and max_cits_log > min_cits_log:
+            try:
+                # Log normalize out extreme outliers (e.g. 10k citations)
+                c_log = math.log10(float(c) + 1)
+                c_norm = (c_log - min_cits_log) / (max_cits_log - min_cits_log)
+                cit_boost = c_norm * 0.15
+            except (ValueError, TypeError):
+                pass
+
+        # -- Trusted Source Boost (Max +5%)
+        source_boost = 0.0
+        s1 = r.get("datasource_name")
+        s2 = meta.get("source")
+        # Ensure we fall back if s1 is None
+        source_name = str(
+            s1 if s1 is not None else (s2 if s2 is not None else "")
+        ).lower()
+        if any(ts in source_name for ts in trusted_sources):
+            source_boost = 0.05
+
+        # Cumulative multiplier (e.g. 1.0 to 1.30)
+        return 1.0 + year_boost + cit_boost + source_boost
+
+    for item in results:
+        base_score = float(item.get("_score", 1.0))
+        multiplier = calculate_boost(item)
+        item["_score"] = base_score * multiplier
+        item["_rerank_multiplier"] = multiplier
+
+    # Re-sort descending based on the new multiplied scores
+    return sorted(results, key=lambda x: float(x.get("_score", 0)), reverse=True)
 
 
 
@@ -245,7 +389,7 @@ async def enrich_with_dataset_details_async(
 
             # Fetch details if we have both IDs
             if datasource_id and dataset_id:
-                logger.info(
+                    logger.info(
                     f"  -> Parallel fetching details for {datasource_id}/{dataset_id}"
                 )
                 details = await fetch_dataset_details_async(
@@ -394,7 +538,7 @@ async def general_search_async(
             normalized_results = await enrich_with_dataset_details_async(
                 normalized_results, top_k
             )
-
+            normalized_results = rerank_results_using_metadata(normalized_results)
         return {"combined_results": normalized_results[:top_k]}
     except Exception as e:
         logger.error(f"  -> Error during async general search: {e}")
@@ -445,12 +589,13 @@ def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> 
             )
         logger.info(f"  -> General search returned {len(normalized_results)} results")
         if enrich_details and normalized_results:
-            logger.info(
+                    logger.info(
                 "  -> Enriching results with detailed dataset information (parallel)..."
             )
             # Use sync enrichment for now - we'll make the whole function async later
             normalized_results = enrich_with_dataset_details(normalized_results, top_k)
 
+            normalized_results = rerank_results_using_metadata(normalized_results)
         return {"combined_results": normalized_results[:top_k]}
     except requests.RequestException as e:
         logger.error(f"  -> Error during general search: {e}")
@@ -460,7 +605,7 @@ def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> 
 def _perform_search(
     data_source_id: str, query: str, filters: dict, all_configs: dict, timeout: int = 10
 ) -> List[dict]:
-    logger.info(
+                    logger.info(
         f"--> Searching source '{data_source_id}' with query: '{(query or '*')[:50]}...'"
     )
     base_url = "https://knowledge-space.org/entity/source-data-by-entity"
@@ -530,6 +675,7 @@ def _perform_search(
                 }
             )
 
+        out = rerank_results_using_metadata(out)
         return out
     except requests.RequestException as e:
         logger.error(f"  -> Error searching {data_source_id}: {e}")
@@ -543,7 +689,7 @@ def smart_knowledge_search(
     data_source: Optional[str] = None,
     top_k: int = 10,
 ) -> dict:
-    q = query or "*"
+    q = expand_query(query) if query else "*"
     if filters:
         config_path = "datasources_config.json"
         if os.path.exists(config_path):
