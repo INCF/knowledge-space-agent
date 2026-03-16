@@ -109,27 +109,30 @@ def search_across_all_fields(
 
 def global_fuzzy_keyword_search(keywords: Iterable[str], top_k: int = 20) -> List[dict]:
     """
-    For each keyword, run search_across_all_fields across all datasources_config and combine unique hits.
+    Keyword search utilizing the public API with explicitly extracted keywords.
     """
-    config_path = "datasources_config.json"
-    if not os.path.exists(config_path):
+    if not keywords:
         return []
-    with open(config_path, "r", encoding="utf-8") as fh:
-        all_configs = json.load(fh)
-    out: List[dict] = []
-    seen = set()
-    for kw in keywords or []:
-        if not kw:
-            continue
-        results = search_across_all_fields(kw, all_configs, threshold=0.8)
-        for r in results:
-            rid = r.get("_id") or r.get("id")
-            if rid and rid not in seen:
-                seen.add(rid)
-                out.append(r)
-        if len(out) >= top_k:
-            break
-    return out[:top_k]
+        
+    query_str = " OR ".join([f'"{kw}"' if ' ' in kw else kw for kw in keywords if kw])
+    if not query_str:
+        return []
+        
+    try:
+        # Search via public API using the combined keyword OR-query string
+        res = general_search(query_str, top_k=top_k, enrich_details=True)
+        out = res.get("combined_results", [])
+        
+        # Differentiate IDs for RRF matching, though RRF
+        # also naturally merges duplicate links/IDs.
+        for i, item in enumerate(out):
+            item["_id"] = f"fuzzy_{i}"
+            item["id"] = f"fuzzy_{i}"
+            
+        return out
+    except Exception as e:
+        print(f"  -> Error in global_fuzzy_keyword_search: {e}")
+        return []
 
 
 def extract_datasource_info_from_link(link: str) -> tuple:
