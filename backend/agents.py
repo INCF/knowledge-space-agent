@@ -578,4 +578,5 @@ class NeuroscienceAssistant:
             print(f"Error in handle_chat: {e}")
             import traceback
             traceback.print_exc()
-            return f"Error: {e}"
+            return "I'm sorry, I encountered an internal server error and cannot process your request right now."
+
