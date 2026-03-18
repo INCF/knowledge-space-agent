@@ -78,7 +78,7 @@ class VertexRetriever(BaseRetriever):
         self.embed_model_name = os.getenv("EMBED_MODEL_NAME", "nomic-ai/nomic-embed-text-v1.5")
         self.bq_dataset = os.getenv("BQ_DATASET_ID", "ks_metadata")
         self.bq_table = os.getenv("BQ_TABLE_ID", "docstore")
-        self.bq_location = os.getenv("BQ_LOCATION","EU")
+        self.bq_location = os.getenv("BQ_LOCATION","US")
         try:
             self.embed_max_tokens = int(os.getenv("EMBED_MAX_TOKENS", "1024"))
         except Exception:
@@ -164,7 +164,7 @@ class VertexRetriever(BaseRetriever):
         cfg = bigquery.QueryJobConfig(
             query_parameters=[bigquery.ArrayQueryParameter("ids", "STRING", ids)]
         )
-        rows = self.bq.query(sql, job_config=cfg, location=self.bq_location).result()
+        rows = self.bq.query(sql, job_config=cfg, location=self.bq_location).result(timeout=10)
         out: Dict[str, Dict[str, Any]] = {}
         for r in rows:
             md = r.metadata_filters
@@ -190,7 +190,7 @@ class VertexRetriever(BaseRetriever):
         if not self.is_enabled or not query:
             return []
 
-        qtext = query if (context or {}).get("raw") else query
+        qtext = query
 
         try:
             vec = self._embed(qtext)
@@ -231,9 +231,14 @@ class VertexRetriever(BaseRetriever):
                     or ""
                 )
                 try:
+                    # Vertex AI returns L2 distance (lower is better), so we negate it for descending similarity sort
                     similarity = -float(dist) if dist is not None else 0.0
                 except Exception:
                     similarity = 0.0
+
+                other_links = md.get("other_links", [])
+                if not isinstance(other_links, list):
+                    other_links = []
 
                 items.append(
                     RetrievedItem(
@@ -242,7 +247,7 @@ class VertexRetriever(BaseRetriever):
                         content=str(content),
                         metadata=md,
                         primary_link=link,
-                        other_links=[],
+                        other_links=other_links,
                         similarity=similarity,
                     )
                 )
