@@ -10,6 +10,7 @@ from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
+from ttfr_estimator import estimate_ttfr
 
 #  LLM (Gemini) client setup 
 try:
@@ -442,6 +443,22 @@ def fuse_results(state: AgentState) -> AgentState:
             else:
                 combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
     all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
+    for result in all_sorted:
+        try:
+            est = estimate_ttfr(
+                datasource_id=result.get("datasource_id"),
+                metadata=result.get("metadata") or result.get("detailed_info") or {},
+                content=result.get("content") or result.get("description") or "",
+            )
+            result["ttfr_estimate"] = {
+                "summary": str(est.summary),
+                "min_days": est.summary.min_days,
+                "max_days": est.summary.max_days,
+                "assumptions": est.assumptions,
+            }
+        except Exception as e:
+            result["ttfr_estimate"] = None
+            print(f"TTFR estimate failed for result: {e}")
     print(f"Results summary: KS={len(ks_results)}, Vector={len(vector_results)}, Combined={len(all_sorted)}")
     page_size = 15
     return {**state, "all_results": all_sorted, "final_results": all_sorted[:page_size]}
@@ -485,7 +502,11 @@ class NeuroscienceAssistant:
     def __init__(self):
         self.chat_history: Dict[str, List[str]] = {}
         self.session_memory: Dict[str, Dict[str, Any]] = {}
+        self._last_response_metadata: Dict[str, dict] = {}
         self.graph = self._build_graph()
+
+    def get_last_response_metadata(self, session_id: str) -> dict:
+        return self._last_response_metadata.get(session_id, {})
 
     def _build_graph(self):
         workflow = StateGraph(AgentState)
@@ -503,6 +524,7 @@ class NeuroscienceAssistant:
     def reset_session(self, session_id: str):
         self.chat_history.pop(session_id, None)
         self.session_memory.pop(session_id, None)
+        self._last_response_metadata.pop(session_id, None)
 
 
     async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
@@ -537,6 +559,16 @@ class NeuroscienceAssistant:
                     "last_text": f"{prev_text}\n\n{text}"[-12000:],
                 })
                 self.session_memory[session_id] = mem
+                ttfr_estimates = []
+                for r in batch:
+                    te = r.get("ttfr_estimate")
+                    if te and isinstance(te, dict):
+                        ttfr_estimates.append({
+                            "id": r.get("id") or r.get("_id"),
+                            "title": r.get("title_guess") or r.get("title"),
+                            "ttfr_summary": te.get("summary"),
+                        })
+                self._last_response_metadata[session_id] = {"ttfr_estimates": ttfr_estimates}
                 self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {text}"])
                 if len(self.chat_history[session_id]) > 20:
                     self.chat_history[session_id] = self.chat_history[session_id][-20:]
@@ -569,6 +601,16 @@ class NeuroscienceAssistant:
                 "intents": final_state.get("intents", [QueryIntent.DATA_DISCOVERY.value]),
                 "last_text": response_text,
             }
+            ttfr_estimates = []
+            for r in final_state.get("final_results", [])[:15]:
+                te = r.get("ttfr_estimate")
+                if te and isinstance(te, dict):
+                    ttfr_estimates.append({
+                        "id": r.get("id") or r.get("_id"),
+                        "title": r.get("title_guess") or r.get("title"),
+                        "ttfr_summary": te.get("summary"),
+                    })
+            self._last_response_metadata[session_id] = {"ttfr_estimates": ttfr_estimates}
 
             self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {response_text}"])
             if len(self.chat_history[session_id]) > 20:

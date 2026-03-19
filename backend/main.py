@@ -113,8 +113,9 @@ async def health():
 async def chat_endpoint(msg: ChatMessage):
     try:
         start_time = time.time()
+        session_id = msg.session_id or "default"
         response_text = await assistant.handle_chat(
-            session_id=msg.session_id or "default",
+            session_id=session_id,
             query=msg.query,
             reset=bool(msg.reset),
         )
@@ -125,6 +126,9 @@ async def chat_endpoint(msg: ChatMessage):
             "timestamp": datetime.utcnow().isoformat(),
             "reset": bool(msg.reset),
         }
+        extra = assistant.get_last_response_metadata(session_id)
+        if extra:
+            metadata.update(extra)
         return ChatResponse(response=response_text, metadata=metadata)
     except asyncio.TimeoutError:
         raise HTTPException(
