@@ -448,10 +448,10 @@ def fuse_results(state: AgentState) -> AgentState:
                 combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
     all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
     logger.info(
-    "Results summary: KS=%d, Vector=%d, Combined=%d",
-    len(ks_results),
-    len(vector_results),
-    len(all_sorted),
+        "Results summary: KS=%d, Vector=%d, Combined=%d",
+        len(ks_results),
+        len(vector_results),
+        len(all_sorted),
     )
     page_size = 15
     return {**state, "all_results": all_sorted, "final_results": all_sorted[:page_size]}
@@ -459,21 +459,11 @@ def fuse_results(state: AgentState) -> AgentState:
 
 async def generate_final_response(state: AgentState) -> AgentState:
     logger.info("--- Node: Response Generation ---")
+
     intents = state.get("intents", [QueryIntent.DATA_DISCOVERY.value])
-    if set(intents) == {QueryIntent.GREETING.value}:
-        response = (
-            "Hey! I can help you find neuroscience datasets.\n\n"
-            "Try examples:\n"
-            "- rat electrophysiology in hippocampus\n"
-            "- human EEG visual stimulus\n"
-            "- fMRI datasets with CC0 or PDDL license\n"
-            "- datasets from EBRAINS \n"
-        )
-        return {**state, "final_response": response}
-    
+
     raw_results = state.get("final_results", [])
 
-    # Handle empty retrieval results
     if not raw_results:
         return {**state, "final_response": "No matching datasets found. Try a different search query."}
 
@@ -596,3 +586,4 @@ class NeuroscienceAssistant:
         except Exception as e:
             logger.error("Error in handle_chat: %s", e)
             logger.exception("Exception occurred in handle_chat")
+            return "I encountered an error. Please try again."
