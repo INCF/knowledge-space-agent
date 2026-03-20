@@ -1,6 +1,14 @@
 # ks_search_tool.py
 import os
 import json
+import logging
+
+logger = logging.getLogger("ks_search_tool")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_h)
 import requests
 import asyncio
 import aiohttp
@@ -92,7 +100,7 @@ def search_across_all_fields(
                     )
                     results.extend(search_results)
                 except Exception as e:
-                    print(
+                    logger.info(
                         f"Error searching {datasource_id} with field {field_name}: {e}"
                     )
                     continue
@@ -181,7 +189,7 @@ async def fetch_dataset_details_async(
             resp.raise_for_status()
             return await resp.json()
     except Exception as e:
-        print(f"  -> Error fetching details for {datasource_id}/{dataset_id}: {e}")
+        logger.error(f"  -> Error fetching details for {datasource_id}/{dataset_id}: {e}")
         return {}
 
 
@@ -194,7 +202,7 @@ def fetch_dataset_details(datasource_id: str, dataset_id: str) -> dict:
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        print(f"  -> Error fetching details for {datasource_id}/{dataset_id}: {e}")
+        logger.error(f"  -> Error fetching details for {datasource_id}/{dataset_id}: {e}")
         return {}
 
 
@@ -237,7 +245,7 @@ async def enrich_with_dataset_details_async(
 
             # Fetch details if we have both IDs
             if datasource_id and dataset_id:
-                print(
+                logger.info(
                     f"  -> Parallel fetching details for {datasource_id}/{dataset_id}"
                 )
                 details = await fetch_dataset_details_async(
@@ -256,7 +264,7 @@ async def enrich_with_dataset_details_async(
             return result, index
 
         except Exception as e:
-            print(f"  -> Error enriching result {index}: {e}")
+            logger.error(f"  -> Error enriching result {index}: {e}")
             return result, index  # Return original result if enrichment fails
 
     # Create HTTP session with connection pooling
@@ -275,20 +283,20 @@ async def enrich_with_dataset_details_async(
             for i, result in enumerate(results[:top_k])
         ]
 
-        print(f"  -> Starting {len(tasks)} parallel enrichment tasks")
+        logger.info(f"  -> Starting {len(tasks)} parallel enrichment tasks")
         start_time = asyncio.get_event_loop().time()
 
         # Execute ALL tasks simultaneously
         completed_results = await asyncio.gather(*tasks, return_exceptions=True)
 
         end_time = asyncio.get_event_loop().time()
-        print(f"  -> Parallel enrichment completed in {end_time - start_time:.2f}s")
+        logger.info(f"  -> Parallel enrichment completed in {end_time - start_time:.2f}s")
 
         # Reconstruct results in original order
         enriched_results = [None] * len(results[:top_k])
         for item in completed_results:
             if isinstance(item, Exception):
-                print(f"  -> Task failed: {item}")
+                logger.info(f"  -> Task failed: {item}")
                 continue
             result, index = item
             enriched_results[index] = result
@@ -338,7 +346,7 @@ async def general_search_async(
     query: str, top_k: int = 10, enrich_details: bool = True
 ) -> dict:
     """Async version of general search with parallel enrichment"""
-    print("--> Executing async general search...")
+    logger.info("--> Executing async general search...")
     base_url = "https://api.knowledge-space.org/datasets/search"
     params = {"q": query or "*", "per_page": min(top_k * 2, 50)}
     try:
@@ -380,21 +388,21 @@ async def general_search_async(
                     "metadata": item,
                 }
             )
-        print(f"  -> Async general search returned {len(normalized_results)} results")
+        logger.info(f"  -> Async general search returned {len(normalized_results)} results")
         if enrich_details and normalized_results:
-            print("  -> Using parallel async enrichment...")
+            logger.info("  -> Using parallel async enrichment...")
             normalized_results = await enrich_with_dataset_details_async(
                 normalized_results, top_k
             )
 
         return {"combined_results": normalized_results[:top_k]}
     except Exception as e:
-        print(f"  -> Error during async general search: {e}")
+        logger.error(f"  -> Error during async general search: {e}")
         return {"combined_results": []}
 
 
 def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> dict:
-    print("--> Executing general search...")
+    logger.info("--> Executing general search...")
     base_url = "https://api.knowledge-space.org/datasets/search"
     params = {"q": query or "*", "per_page": min(top_k * 2, 50)}
     try:
@@ -435,9 +443,9 @@ def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> 
                     "metadata": item,
                 }
             )
-        print(f"  -> General search returned {len(normalized_results)} results")
+        logger.info(f"  -> General search returned {len(normalized_results)} results")
         if enrich_details and normalized_results:
-            print(
+            logger.info(
                 "  -> Enriching results with detailed dataset information (parallel)..."
             )
             # Use sync enrichment for now - we'll make the whole function async later
@@ -445,14 +453,14 @@ def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> 
 
         return {"combined_results": normalized_results[:top_k]}
     except requests.RequestException as e:
-        print(f"  -> Error during general search: {e}")
+        logger.error(f"  -> Error during general search: {e}")
         return {"combined_results": []}
 
 
 def _perform_search(
     data_source_id: str, query: str, filters: dict, all_configs: dict, timeout: int = 10
 ) -> List[dict]:
-    print(
+    logger.info(
         f"--> Searching source '{data_source_id}' with query: '{(query or '*')[:50]}...'"
     )
     base_url = "https://knowledge-space.org/entity/source-data-by-entity"
@@ -489,7 +497,7 @@ def _perform_search(
             .get("hits", {})
             .get("hits", [])
         )
-        print(f"  -> Retrieved {len(hits)} raw results")
+        logger.info(f"  -> Retrieved {len(hits)} raw results")
         out = []
         for hit in hits:
             src = hit.get("_source", {}) or {}
@@ -524,7 +532,7 @@ def _perform_search(
 
         return out
     except requests.RequestException as e:
-        print(f"  -> Error searching {data_source_id}: {e}")
+        logger.error(f"  -> Error searching {data_source_id}: {e}")
         return []
 
 
