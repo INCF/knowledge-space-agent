@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
+from rrf import reciprocal_rank_fusion
 
 
 #  LLM (Gemini) client setup 
@@ -434,8 +435,6 @@ async def execute_search(state: AgentState) -> Dict[str, Any]:
     )
     return {"ks_results": all_ks_results, "vector_results": vec_results}
 
-
-from rrf import reciprocal_rank_fusion
 
 def fuse_results(state: AgentState) -> AgentState:
     logger.info("Node: Result Fusion (RRF)")
