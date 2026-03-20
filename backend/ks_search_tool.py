@@ -246,7 +246,7 @@ async def enrich_with_dataset_details_async(
 
             # Fetch details if we have both IDs
             if datasource_id and dataset_id:
-                    logger.info(
+                logger.info(
                     f"  -> Parallel fetching details for {datasource_id}/{dataset_id}"
                 )
                 details = await fetch_dataset_details_async(
@@ -446,7 +446,7 @@ def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> 
             )
         logger.info(f"  -> General search returned {len(normalized_results)} results")
         if enrich_details and normalized_results:
-                    logger.info(
+            logger.info(
                 "  -> Enriching results with detailed dataset information (parallel)..."
             )
             # Use sync enrichment for now - we'll make the whole function async later
@@ -461,7 +461,7 @@ def general_search(query: str, top_k: int = 10, enrich_details: bool = True) -> 
 def _perform_search(
     data_source_id: str, query: str, filters: dict, all_configs: dict, timeout: int = 10
 ) -> List[dict]:
-                    logger.info(
+    logger.info(
         f"--> Searching source '{data_source_id}' with query: '{(query or '*')[:50]}...'"
     )
     base_url = "https://knowledge-space.org/entity/source-data-by-entity"
