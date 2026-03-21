@@ -585,8 +585,6 @@ class NeuroscienceAssistant:
             if len(self.chat_history[session_id]) > 20:
                 self.chat_history[session_id] = self.chat_history[session_id][-20:]
             return response_text
-        except Exception as e:
-            print(f"Error in handle_chat: {e}")
-            import traceback
-            traceback.print_exc()
-            return f"Error: {e}"
+        except Exception:
+            logger.exception("Error in handle_chat")
+            return "I'm sorry, I encountered an internal server error and cannot process your request right now."
