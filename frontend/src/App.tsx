@@ -20,6 +20,8 @@ const App: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadError, setUploadError] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -74,6 +76,81 @@ Try asking me something like:
       hour12: true 
     });
   };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setUploadState('error');
+      setUploadError('Only image files are supported.');
+      setTimeout(() => setUploadState('idle'), 3000);
+      e.target.value = '';
+      return;
+    }
+
+    // Validate file size (max 10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadState('error');
+      setUploadError('Image must be smaller than 10 MB.');
+      setTimeout(() => setUploadState('idle'), 3000);
+      e.target.value = '';
+      return;
+    }
+
+    setUploadState('uploading');
+    setUploadError('');
+    setIsLoading(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail?.detail || `Server error ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.extracted_text || !data.extracted_text.trim()) {
+        throw new Error('No readable text found in the image.');
+      }
+
+      setInputValue(data.extracted_text);
+      setUploadState('success');
+      // Reset success indicator after 2 s
+      setTimeout(() => setUploadState('idle'), 2000);
+    } catch (error: unknown) {
+      console.error('Upload error:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to extract text from the image.';
+      setUploadState('error');
+      setUploadError(msg);
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        type: 'error',
+        content: `Image upload failed: ${msg} Please try a clearer screenshot.`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      // Reset error indicator after 3 s
+      setTimeout(() => setUploadState('idle'), 3000);
+    } finally {
+      setIsLoading(false);
+      // Reset the file input so the same file can be uploaded again
+      e.target.value = '';
+    }
+  };
+
+
+
+
 
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -188,29 +265,67 @@ Try asking me something like:
         {/* Input Area */}
         <footer className="input-section">
           <div className="input-container">
-            <div className="input-wrapper">
-              <input 
-                type="text" 
-                className="message-input" 
-                placeholder="Ask about neuroscience datasets, brain imaging data, or research topics..."
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={isLoading}
-              />
-              <button 
-                className={`send-button ${isLoading || !inputValue.trim() ? 'disabled' : ''}`}
-                type="button" 
-                onClick={sendMessage} 
-                disabled={isLoading || !inputValue.trim()}
-              >
-                {isLoading ? (
-                  <i className="fas fa-spinner fa-spin"></i>
-                ) : (
-                  <i className="fas fa-paper-plane"></i>
-                )}
-              </button>
-            </div>
+           <div className="input-wrapper" style={{ alignItems: 'flex-end' }}>
+  <input
+    type="file" id="image-upload" accept="image/*" hidden
+    onChange={handleImageUpload} disabled={isLoading || uploadState === 'uploading'}
+  />
+
+  <label
+    htmlFor="image-upload"
+    className={`action-btn upload-btn upload-btn--${uploadState} ${(isLoading || uploadState === 'uploading') ? 'disabled' : ''}`}
+    title={
+      uploadState === 'uploading' ? 'Extracting text…' :
+      uploadState === 'success'   ? 'Text extracted!' :
+      uploadState === 'error'     ? uploadError || 'Upload failed' :
+      'Upload an image to extract search terms'
+    }
+    aria-label="Upload image for OCR"
+  >
+    {uploadState === 'uploading' && <i className="fas fa-spinner fa-spin"></i>}
+    {uploadState === 'success'   && <i className="fas fa-check"></i>}
+    {uploadState === 'error'     && <i className="fas fa-exclamation-triangle"></i>}
+    {uploadState === 'idle'      && <i className="fas fa-paperclip"></i>}
+  </label>
+
+  {/* Dynamic Textarea */}
+  <textarea 
+    className="message-input" 
+    placeholder="Type or upload an image..."
+    value={inputValue}
+    rows={1}
+    onChange={(e) => {
+        setInputValue(e.target.value);
+        // Reset height to calculate correctly
+        e.target.style.height = 'inherit';
+        // Set new height based on scrollHeight, capped at 150px
+        e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+    }}
+    onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+            // Reset height after sending
+            (e.target as HTMLTextAreaElement).style.height = 'inherit';
+        }
+    }}
+    style={{ 
+        resize: 'none', 
+        overflowY: inputValue.split('\n').length > 5 ? 'auto' : 'hidden',
+        minHeight: '44px',
+        maxHeight: '150px'
+    }}
+    disabled={isLoading}
+  />
+  
+  <button 
+    className={`send-button ${isLoading || !inputValue.trim() ? 'disabled' : ''}`}
+    onClick={sendMessage} 
+    disabled={isLoading || !inputValue.trim()}
+  >
+    {isLoading ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-paper-plane"></i>}
+  </button>
+</div>
             <div className="input-footer">
               <i className="fas fa-info-circle"></i>
               <span>Powered by INCF KnowledgeSpace API - Neuroscience datasets</span>
