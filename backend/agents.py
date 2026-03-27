@@ -5,11 +5,15 @@ import json
 import asyncio
 from enum import Enum
 from typing import Dict, List, Optional, TypedDict, Any
+import logging
+
+logger = logging.getLogger("agents")
 
 from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
+
 
 #  LLM (Gemini) client setup 
 try:
@@ -332,22 +336,22 @@ class AgentState(TypedDict):
 class KSSearchAgent:
     async def run(self, query: str, keywords: List[str], want: int = 45) -> dict:
         try:
-            print("  -> Using parallel enrichment in KS search")
+            logger.info("Using parallel enrichment in KS search")
             general = await general_search_async(query, top_k=min(want, 50), enrich_details=True)
             general = general.get("combined_results", [])
         except Exception as e:
-            print(f"Async general search error, falling back to sync: {e}")
+            logger.error("Async general search error, falling back to sync: %s", e)
             try:
                 general = general_search(query, top_k=min(want, 50), enrich_details=True).get("combined_results", [])
             except Exception as e2:
-                print(f"Sync general search error: {e2}")
+                logger.error("Sync general search error: %s", e2)
                 general = []
         try:
-            print(f"  -> Running fuzzy search with keywords: {keywords}")
+            logger.info("Running fuzzy search with keywords: %s", keywords)
             fuzzy = global_fuzzy_keyword_search(keywords, top_k=min(want, 50))
-            print(f"  -> Fuzzy search returned {len(fuzzy)} results")
+            logger.info("Fuzzy search returned %d results", len(fuzzy))
         except Exception as e:
-            print(f"Fuzzy config search error: {e}")
+            logger.error("Fuzzy config search error: %s", e)
             fuzzy = []
         return {"combined_results": (general + fuzzy)[: max(want, 15)]}
 
@@ -370,25 +374,25 @@ class VectorSearchAgent:
             )
             return [item.__dict__ if hasattr(item, "__dict__") else item for item in results]
         except Exception as e:
-            print(f"Vector search error: {e}")
+            logger.error("Vector search error: %s", e)
             return []
 
 
 async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
-    print("--- Node: Keywords, Rewrite, Intents ---")
+    logger.info("Node: Keywords, Rewrite, Intents")
     # Detect intents on the raw input first 
     intents0 = await call_gemini_detect_intents(state["query"], state.get("history", []))
     if intents0 == [QueryIntent.GREETING.value]:
-        print("Pure greeting detected; skipping search.")
+        logger.info("Pure greeting detected; skipping search")
         return {**state, "effective_query": state["query"], "keywords": [], "intents": intents0}
 
     effective = await call_gemini_rewrite_with_history(state["query"], state.get("history", []))
     keywords = await call_gemini_for_keywords(effective)
     # Re-evaluate intents after rewrite (usually drops greeting if mixed)
     intents = await call_gemini_detect_intents(effective, state.get("history", []))
-    print(f"  -> Effective query: {effective}")
-    print(f"  -> Keywords: {keywords}")
-    print(f"  -> Intents: {intents}")
+    logger.info("Effective query: %s", effective)
+    logger.info("Keywords: %s", keywords)
+    logger.info("Intents: %s", intents)
     return {**state, "effective_query": effective, "keywords": keywords, "intents": intents}
 
 
@@ -402,9 +406,9 @@ def get_vector_agent():
     return _global_vector_agent
 
 async def execute_search(state: AgentState) -> Dict[str, Any]:
-    print("--- Node: Search Execution ---")
+    logger.info("Node: Search Execution")
     if set(state.get("intents", [])) == {QueryIntent.GREETING.value}:
-        print("Pure greeting; skipping search.")
+        logger.info("Pure greeting; skipping search")
         return {"ks_results": [], "vector_results": []}
     want_pool = 60  # collect enough for several pages (15 per page)
     
@@ -423,12 +427,16 @@ async def execute_search(state: AgentState) -> Dict[str, Any]:
     ks_results_data, vec_results = await asyncio.gather(ks_task, vec_task)
     all_ks_results = ks_results_data.get("combined_results", [])
     
-    print(f"Search completed: KS results={len(all_ks_results)}, Vector results={len(vec_results)}")
+    logger.info(
+        "Search completed: KS results=%d, Vector results=%d",
+        len(all_ks_results),
+        len(vec_results),
+    )
     return {"ks_results": all_ks_results, "vector_results": vec_results}
 
 
 def fuse_results(state: AgentState) -> AgentState:
-    print("--- Node: Result Fusion ---")
+    logger.info("Node: Result Fusion")
     ks_results = state.get("ks_results", [])
     vector_results = state.get("vector_results", [])
     combined: Dict[str, dict] = {}
@@ -444,13 +452,18 @@ def fuse_results(state: AgentState) -> AgentState:
             else:
                 combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
     all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
-    print(f"Results summary: KS={len(ks_results)}, Vector={len(vector_results)}, Combined={len(all_sorted)}")
+    logger.info(
+        "Results summary: KS=%d, Vector=%d, Combined=%d",
+        len(ks_results),
+        len(vector_results),
+        len(all_sorted),
+    )
     page_size = 15
     return {**state, "all_results": all_sorted, "final_results": all_sorted[:page_size]}
 
 
 async def generate_final_response(state: AgentState) -> AgentState:
-    print("--- Node: Response Generation ---")
+    logger.info("Node: Response Generation")
     intents = state.get("intents", [QueryIntent.DATA_DISCOVERY.value])
     if set(intents) == {QueryIntent.GREETING.value}:
         response = (
@@ -471,7 +484,12 @@ async def generate_final_response(state: AgentState) -> AgentState:
     
     start_number = state.get("start_number", 1)
     prev_text = state.get("previous_text", "")
-    print(f"Generating response for {len(raw_results)} final results, start={start_number}, intents={intents}")
+    logger.info(
+        "Generating response for %d results, start=%d, intents=%s",
+        len(raw_results),
+        start_number,
+        intents,
+    )
     
     try:
         response = await call_gemini_for_final_synthesis(
@@ -530,9 +548,12 @@ class NeuroscienceAssistant:
                 effective_query = mem.get("effective_query", "")
                 prev_text = mem.get("last_text", "")
                 
-                text = await call_gemini_for_final_synthesis(
-                    effective_query, batch, intents, start_number=start + 1, previous_text=prev_text
-                )
+                try:
+                    text = await call_gemini_for_final_synthesis(
+                        effective_query, batch, intents, start_number=start + 1, previous_text=prev_text
+                    )
+                except Exception:
+                    text = "Unable to process your request. Please try again."
                 mem.update({
                     "page": page,
                     "page_size": page_size,
@@ -577,7 +598,7 @@ class NeuroscienceAssistant:
                 self.chat_history[session_id] = self.chat_history[session_id][-20:]
             return response_text
         except Exception as e:
-            print(f"Error in handle_chat: {e}")
+            logger.error("Error in handle_chat: %s", e)
             import traceback
-            traceback.print_exc()
+            logger.exception("Exception occurred in handle_chat")
             return "I encountered an error. Please try again."
