@@ -11,6 +11,14 @@ from langgraph.graph import StateGraph, END
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
 
+# Fusion weights configurable via environment variables
+VECTOR_WEIGHT = float(os.getenv("FUSION_VECTOR_WEIGHT", "0.6"))
+KS_WEIGHT = float(os.getenv("FUSION_KS_WEIGHT", "0.4"))
+
+# Defaults preserve existing behavior (vector=0.6, keyword search=0.4)
+if any(w < 0 for w in (VECTOR_WEIGHT, KS_WEIGHT)):
+    raise ValueError("Fusion weights must be non-negative")
+
 #  LLM (Gemini) client setup 
 try:
     from google import genai
@@ -435,14 +443,14 @@ def fuse_results(state: AgentState) -> AgentState:
     for res in vector_results:
         if isinstance(res, dict):
             doc_id = res.get("id") or res.get("_id") or f"vec_{len(combined)}"
-            combined[doc_id] = {**res, "final_score": res.get("similarity", 0) * 0.6}
+            combined[doc_id] = {**res, "final_score": res.get("similarity", 0) * VECTOR_WEIGHT}
     for res in ks_results:
         if isinstance(res, dict):
             doc_id = res.get("_id") or res.get("id") or f"ks_{len(combined)}"
             if doc_id in combined:
-                combined[doc_id]["final_score"] += res.get("_score", 0) * 0.4
+                combined[doc_id]["final_score"] += res.get("_score", 0) * KS_WEIGHT
             else:
-                combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
+                combined[doc_id] = {**res, "final_score": res.get("_score", 0) * KS_WEIGHT}
     all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
     print(f"Results summary: KS={len(ks_results)}, Vector={len(vector_results)}, Combined={len(all_sorted)}")
     page_size = 15
