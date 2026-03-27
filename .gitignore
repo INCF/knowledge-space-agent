@@ -164,3 +164,8 @@ cython_debug/
 
 #Embedded data files
 data_processing/embeddings.jsonl
+
+# Chat history database (generated when ENABLE_PERSISTENCE=true)
+backend/chat_history.db
+backend/chat_history.db-wal
+backend/chat_history.db-shm
