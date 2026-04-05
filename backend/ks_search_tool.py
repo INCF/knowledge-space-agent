@@ -348,7 +348,7 @@ async def general_search_async(
     """Async version of general search with parallel enrichment"""
     logger.info("--> Executing async general search...")
     base_url = "https://api.knowledge-space.org/datasets/search"
-    params = {"q": query or "*", "per_page": min(top_k * 2, 50)}
+    params = {"q": expand_query(query) if query else "*", "per_page": min(top_k * 2, 50)}
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(base_url, params=params, timeout=15) as resp:
