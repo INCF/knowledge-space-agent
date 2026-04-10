@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
+from rrf import reciprocal_rank_fusion
 
 
 #  LLM (Gemini) client setup 
@@ -380,16 +381,22 @@ class VectorSearchAgent:
 
 async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     logger.info("Node: Keywords, Rewrite, Intents")
-    # Detect intents on the raw input first 
-    intents0 = await call_gemini_detect_intents(state["query"], state.get("history", []))
+    # Detect intents on the raw input first and rewrite parallel
+    intents0, effective = await asyncio.gather(
+        call_gemini_detect_intents(state["query"], state.get("history", [])),
+        call_gemini_rewrite_with_history(state["query"], state.get("history", []))
+    )
+    
     if intents0 == [QueryIntent.GREETING.value]:
         logger.info("Pure greeting detected; skipping search")
         return {**state, "effective_query": state["query"], "keywords": [], "intents": intents0}
 
-    effective = await call_gemini_rewrite_with_history(state["query"], state.get("history", []))
-    keywords = await call_gemini_for_keywords(effective)
-    # Re-evaluate intents after rewrite (usually drops greeting if mixed)
-    intents = await call_gemini_detect_intents(effective, state.get("history", []))
+    # Re-evaluate intents after rewrite and run keyword extraction in parallel
+    keywords, intents = await asyncio.gather(
+        call_gemini_for_keywords(effective),
+        call_gemini_detect_intents(effective, state.get("history", []))
+    )
+    
     logger.info("Effective query: %s", effective)
     logger.info("Keywords: %s", keywords)
     logger.info("Intents: %s", intents)
@@ -436,24 +443,16 @@ async def execute_search(state: AgentState) -> Dict[str, Any]:
 
 
 def fuse_results(state: AgentState) -> AgentState:
-    logger.info("Node: Result Fusion")
+    logger.info("Node: Result Fusion (RRF)")
     ks_results = state.get("ks_results", [])
     vector_results = state.get("vector_results", [])
-    combined: Dict[str, dict] = {}
-    for res in vector_results:
-        if isinstance(res, dict):
-            doc_id = res.get("id") or res.get("_id") or f"vec_{len(combined)}"
-            combined[doc_id] = {**res, "final_score": res.get("similarity", 0) * 0.6}
-    for res in ks_results:
-        if isinstance(res, dict):
-            doc_id = res.get("_id") or res.get("id") or f"ks_{len(combined)}"
-            if doc_id in combined:
-                combined[doc_id]["final_score"] += res.get("_score", 0) * 0.4
-            else:
-                combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
-    all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
+    
+    # We pass both lists to RRF. RRF handles deduplication and ranking.
+    # It takes care of ranking documents that appear in either or both lists.
+    all_sorted = reciprocal_rank_fusion([vector_results, ks_results], k=60, top_k=60)
+    
     logger.info(
-        "Results summary: KS=%d, Vector=%d, Combined=%d",
+        "RRF fusion: KS=%d, Vector=%d → Combined=%d unique results",
         len(ks_results),
         len(vector_results),
         len(all_sorted),
@@ -534,7 +533,7 @@ class NeuroscienceAssistant:
 
             more_count = _is_more_query(query)
             mem = self.session_memory.get(session_id, {})
-            if more_count is not None or (query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"}):
+            if query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"} or more_count is not None:
                 all_results = mem.get("all_results", [])
                 if not all_results:
                     return "There are no earlier results to continue. Ask me for a dataset (e.g., 'human EEG BIDS')."
