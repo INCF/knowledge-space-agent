@@ -381,16 +381,22 @@ class VectorSearchAgent:
 
 async def extract_keywords_and_rewrite(state: AgentState) -> AgentState:
     logger.info("Node: Keywords, Rewrite, Intents")
-    # Detect intents on the raw input first 
-    intents0 = await call_gemini_detect_intents(state["query"], state.get("history", []))
+    # Detect intents on the raw input first and rewrite parallel
+    intents0, effective = await asyncio.gather(
+        call_gemini_detect_intents(state["query"], state.get("history", [])),
+        call_gemini_rewrite_with_history(state["query"], state.get("history", []))
+    )
+    
     if intents0 == [QueryIntent.GREETING.value]:
         logger.info("Pure greeting detected; skipping search")
         return {**state, "effective_query": state["query"], "keywords": [], "intents": intents0}
 
-    effective = await call_gemini_rewrite_with_history(state["query"], state.get("history", []))
-    keywords = await call_gemini_for_keywords(effective)
-    # Re-evaluate intents after rewrite (usually drops greeting if mixed)
-    intents = await call_gemini_detect_intents(effective, state.get("history", []))
+    # Re-evaluate intents after rewrite and run keyword extraction in parallel
+    keywords, intents = await asyncio.gather(
+        call_gemini_for_keywords(effective),
+        call_gemini_detect_intents(effective, state.get("history", []))
+    )
+    
     logger.info("Effective query: %s", effective)
     logger.info("Keywords: %s", keywords)
     logger.info("Intents: %s", intents)
@@ -527,7 +533,7 @@ class NeuroscienceAssistant:
 
             more_count = _is_more_query(query)
             mem = self.session_memory.get(session_id, {})
-            if more_count is not None or (query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"}):
+            if query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"} or more_count is not None:
                 all_results = mem.get("all_results", [])
                 if not all_results:
                     return "There are no earlier results to continue. Ask me for a dataset (e.g., 'human EEG BIDS')."
