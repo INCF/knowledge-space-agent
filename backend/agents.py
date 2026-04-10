@@ -75,7 +75,7 @@ async def _get_genai_client():
         return _GENAI_CLIENT
 
     async with _GENAI_CLIENT_LOCK:
-        # Double-check inside lock
+        #Double-check inside lock
         if _GENAI_CLIENT is not None:
             return _GENAI_CLIENT
 
