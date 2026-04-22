@@ -89,10 +89,10 @@ class VertexRetriever(BaseRetriever):
             self.query_char_limit = 8000
 
         # Enable only if everything is present
-        self.is_enabled = all(
+        self._is_enabled = all(
             [self.project_id, self.region, self.index_endpoint_full, self.deployed_id]
         )
-        if not self.is_enabled:
+        if not self._is_enabled:
             logger.warning(
                 "Vector search disabled due to incomplete GCP env: "
                 f"project={bool(self.project_id)}, region={bool(self.region)}, "
@@ -109,7 +109,7 @@ class VertexRetriever(BaseRetriever):
             self.bq = bigquery.Client(project=self.project_id)
         except Exception as e:
             logger.error(f"GCP client initialization failed: {e}")
-            self.is_enabled = False
+            self._is_enabled = False
             return
 
         try:
@@ -123,7 +123,11 @@ class VertexRetriever(BaseRetriever):
             logger.info(f"Vector search initialized on device={self.device} using {self.embed_model_name}")
         except Exception as e:
             logger.error(f"Embedding model initialization failed: {e}")
-            self.is_enabled = False
+            self._is_enabled = False
+
+    @property
+    def is_enabled(self) -> bool:
+        return getattr(self, '_is_enabled', False)
 
     # Embedding
     def _embed(self, text: str) -> List[float]:
