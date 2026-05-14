@@ -3,7 +3,9 @@ import os
 import re
 import json
 import asyncio
+from collections import OrderedDict
 from enum import Enum
+from time import monotonic
 from typing import Dict, List, Optional, TypedDict, Any
 import logging
 
@@ -86,6 +88,21 @@ def _get_genai_client():
 
 FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
 FLASH_LITE_MODEL = os.getenv("GEMINI_FLASH_LITE_MODEL", "gemini-2.5-flash-lite")
+
+
+def _env_int_at_least(name: str, default: int, minimum: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+    if value < minimum:
+        logger.warning("%s must be >= %s; using default %s", name, minimum, default)
+        return default
+    return value
 
 
 # Query intent/types 
@@ -503,8 +520,12 @@ async def generate_final_response(state: AgentState) -> AgentState:
 
 class NeuroscienceAssistant:
     def __init__(self):
-        self.chat_history: Dict[str, List[str]] = {}
-        self.session_memory: Dict[str, Dict[str, Any]] = {}
+        self.max_sessions = _env_int_at_least("SESSION_MAX_COUNT", 1000, 1)
+        self.session_ttl_seconds = _env_int_at_least("SESSION_TTL_SECONDS", 3600, 0)
+        self.history_limit = _env_int_at_least("SESSION_HISTORY_LIMIT", 20, 1)
+        self.chat_history: OrderedDict[str, List[str]] = OrderedDict()
+        self.session_memory: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self._session_last_seen: OrderedDict[str, float] = OrderedDict()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -520,15 +541,52 @@ class NeuroscienceAssistant:
         workflow.add_edge("generate_response", END)
         return workflow.compile()
 
-    def reset_session(self, session_id: str):
+    def _drop_session(self, session_id: str):
         self.chat_history.pop(session_id, None)
         self.session_memory.pop(session_id, None)
+        self._session_last_seen.pop(session_id, None)
+
+    def _evict_expired_sessions(self, now: float):
+        if self.session_ttl_seconds <= 0:
+            return
+        cutoff = now - self.session_ttl_seconds
+        for session_id, last_seen in list(self._session_last_seen.items()):
+            if last_seen >= cutoff:
+                break
+            self._drop_session(session_id)
+
+    def _evict_overflow_sessions(self):
+        while len(self._session_last_seen) > self.max_sessions:
+            session_id, _ = self._session_last_seen.popitem(last=False)
+            self.chat_history.pop(session_id, None)
+            self.session_memory.pop(session_id, None)
+
+    def _touch_session(self, session_id: str):
+        now = monotonic()
+        self._evict_expired_sessions(now)
+        if session_id in self._session_last_seen:
+            self._session_last_seen.move_to_end(session_id)
+        self._session_last_seen[session_id] = now
+        if session_id in self.chat_history:
+            self.chat_history.move_to_end(session_id)
+        if session_id in self.session_memory:
+            self.session_memory.move_to_end(session_id)
+        self._evict_overflow_sessions()
+
+    def _trim_history(self, session_id: str):
+        history = self.chat_history[session_id]
+        if len(history) > self.history_limit:
+            self.chat_history[session_id] = history[-self.history_limit:]
+
+    def reset_session(self, session_id: str):
+        self._drop_session(session_id)
 
 
     async def handle_chat(self, session_id: str, query: str, reset: bool = False) -> str:
         try:
             if reset:
                 self.reset_session(session_id)
+            self._touch_session(session_id)
             if session_id not in self.chat_history:
                 self.chat_history[session_id] = []
 
@@ -560,9 +618,9 @@ class NeuroscienceAssistant:
                     "last_text": f"{prev_text}\n\n{text}"[-12000:],
                 })
                 self.session_memory[session_id] = mem
+                self.session_memory.move_to_end(session_id)
                 self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {text}"])
-                if len(self.chat_history[session_id]) > 20:
-                    self.chat_history[session_id] = self.chat_history[session_id][-20:]
+                self._trim_history(session_id)
                 return text
 
             initial_state: AgentState = {
@@ -592,10 +650,10 @@ class NeuroscienceAssistant:
                 "intents": final_state.get("intents", [QueryIntent.DATA_DISCOVERY.value]),
                 "last_text": response_text,
             }
+            self.session_memory.move_to_end(session_id)
 
             self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {response_text}"])
-            if len(self.chat_history[session_id]) > 20:
-                self.chat_history[session_id] = self.chat_history[session_id][-20:]
+            self._trim_history(session_id)
             return response_text
         except Exception as e:
             logger.error("Error in handle_chat: %s", e)

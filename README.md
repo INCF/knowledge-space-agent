@@ -134,6 +134,12 @@ The backend requires specific environment variables to connect to **Google Cloud
 | `BQ_DATASET_ID`     | BigQuery dataset ID                  | Dataset containing KnowledgeSpace metadata |
 | `INDEX_ENDPOINT_ID` | Vertex AI Vector Search endpoint     | ID of deployed vector index for RAG        |
 | `ELASTIC_BASE_URL`  | Elasticsearch base URL               | URL of the text search engine              |
+| `SESSION_MAX_COUNT` | Maximum in-memory chat sessions      | Defaults to `1000`                         |
+| `SESSION_TTL_SECONDS` | Inactive session eviction time     | Defaults to `3600`; set `0` to disable TTL |
+| `SESSION_HISTORY_LIMIT` | Messages retained per session    | Defaults to `20`                           |
+
+The backend keeps chat history and paginated search results in memory. Session
+LRU and TTL eviction bound that memory for long-running deployments.
 
 ---
 
