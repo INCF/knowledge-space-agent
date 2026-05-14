@@ -526,6 +526,7 @@ class NeuroscienceAssistant:
         self.chat_history: OrderedDict[str, List[str]] = OrderedDict()
         self.session_memory: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self._session_last_seen: OrderedDict[str, float] = OrderedDict()
+        self._session_tokens: Dict[str, object] = {}
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -545,6 +546,7 @@ class NeuroscienceAssistant:
         self.chat_history.pop(session_id, None)
         self.session_memory.pop(session_id, None)
         self._session_last_seen.pop(session_id, None)
+        self._session_tokens.pop(session_id, None)
 
     def _evict_expired_sessions(self, now: float):
         if self.session_ttl_seconds <= 0:
@@ -558,8 +560,7 @@ class NeuroscienceAssistant:
     def _evict_overflow_sessions(self):
         while len(self._session_last_seen) > self.max_sessions:
             session_id, _ = self._session_last_seen.popitem(last=False)
-            self.chat_history.pop(session_id, None)
-            self.session_memory.pop(session_id, None)
+            self._drop_session(session_id)
 
     def _touch_session(self, session_id: str):
         now = monotonic()
@@ -578,6 +579,20 @@ class NeuroscienceAssistant:
         if len(history) > self.history_limit:
             self.chat_history[session_id] = history[-self.history_limit:]
 
+    def _ensure_session(self, session_id: str):
+        self._touch_session(session_id)
+        if session_id not in self.chat_history:
+            self.chat_history[session_id] = []
+        if session_id not in self._session_tokens:
+            self._session_tokens[session_id] = object()
+
+    def _session_is_current(self, session_id: str, token: object) -> bool:
+        return (
+            self._session_tokens.get(session_id) is token
+            and session_id in self._session_last_seen
+            and session_id in self.chat_history
+        )
+
     def reset_session(self, session_id: str):
         self._drop_session(session_id)
 
@@ -586,9 +601,8 @@ class NeuroscienceAssistant:
         try:
             if reset:
                 self.reset_session(session_id)
-            self._touch_session(session_id)
-            if session_id not in self.chat_history:
-                self.chat_history[session_id] = []
+            self._ensure_session(session_id)
+            session_token = self._session_tokens[session_id]
 
             more_count = _is_more_query(query)
             mem = self.session_memory.get(session_id, {})
@@ -612,6 +626,9 @@ class NeuroscienceAssistant:
                     )
                 except Exception:
                     text = "Unable to process your request. Please try again."
+                if not self._session_is_current(session_id, session_token):
+                    return text
+                self._touch_session(session_id)
                 mem.update({
                     "page": page,
                     "page_size": page_size,
@@ -641,6 +658,9 @@ class NeuroscienceAssistant:
             final_state = await self.graph.ainvoke(initial_state)
             response_text = final_state.get("final_response", "I encountered an unexpected empty response.")
 
+            if not self._session_is_current(session_id, session_token):
+                return response_text
+            self._touch_session(session_id)
             self.session_memory[session_id] = {
                 "all_results": final_state.get("all_results", []),
                 "page": 1,
