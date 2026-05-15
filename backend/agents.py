@@ -527,6 +527,7 @@ class NeuroscienceAssistant:
         self.session_memory: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self._session_last_seen: OrderedDict[str, float] = OrderedDict()
         self._session_tokens: Dict[str, object] = {}
+        self._session_active_counts: Dict[str, int] = {}
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -548,6 +549,21 @@ class NeuroscienceAssistant:
         self._session_last_seen.pop(session_id, None)
         self._session_tokens.pop(session_id, None)
 
+    def _session_is_active(self, session_id: str) -> bool:
+        return self._session_active_counts.get(session_id, 0) > 0
+
+    def _reserve_session(self, session_id: str):
+        self._session_active_counts[session_id] = self._session_active_counts.get(session_id, 0) + 1
+
+    def _release_session(self, session_id: str):
+        count = self._session_active_counts.get(session_id, 0)
+        if count <= 1:
+            self._session_active_counts.pop(session_id, None)
+        else:
+            self._session_active_counts[session_id] = count - 1
+        self._evict_expired_sessions(monotonic())
+        self._evict_overflow_sessions()
+
     def _evict_expired_sessions(self, now: float):
         if self.session_ttl_seconds <= 0:
             return
@@ -555,12 +571,23 @@ class NeuroscienceAssistant:
         for session_id, last_seen in list(self._session_last_seen.items()):
             if last_seen >= cutoff:
                 break
+            if self._session_is_active(session_id):
+                continue
             self._drop_session(session_id)
 
-    def _evict_overflow_sessions(self):
+    def _evict_overflow_sessions(self, protected_session_id: Optional[str] = None):
         while len(self._session_last_seen) > self.max_sessions:
-            session_id, _ = self._session_last_seen.popitem(last=False)
-            self._drop_session(session_id)
+            evicted = False
+            for session_id in list(self._session_last_seen):
+                if session_id == protected_session_id:
+                    continue
+                if self._session_is_active(session_id):
+                    continue
+                self._drop_session(session_id)
+                evicted = True
+                break
+            if not evicted:
+                break
 
     def _touch_session(self, session_id: str):
         now = monotonic()
@@ -572,7 +599,7 @@ class NeuroscienceAssistant:
             self.chat_history.move_to_end(session_id)
         if session_id in self.session_memory:
             self.session_memory.move_to_end(session_id)
-        self._evict_overflow_sessions()
+        self._evict_overflow_sessions(protected_session_id=session_id)
 
     def _trim_history(self, session_id: str):
         history = self.chat_history[session_id]
@@ -603,78 +630,93 @@ class NeuroscienceAssistant:
                 self.reset_session(session_id)
             self._ensure_session(session_id)
             session_token = self._session_tokens[session_id]
+            self._reserve_session(session_id)
+            try:
+                more_count = _is_more_query(query)
+                mem = self.session_memory.get(session_id, {})
+                if more_count is not None or (
+                    query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"}
+                ):
+                    all_results = mem.get("all_results", [])
+                    if not all_results:
+                        return (
+                            "There are no earlier results to continue. "
+                            "Ask me for a dataset (e.g., 'human EEG BIDS')."
+                        )
+                    page_size = more_count or mem.get("page_size", 15)
+                    page = mem.get("page", 1) + 1
+                    start = (page - 1) * page_size
+                    batch = all_results[start:start + page_size]
+                    if not batch:
+                        return "You've reached the end of the results. Try refining the query."
+                    intents = mem.get("intents", [QueryIntent.DATA_DISCOVERY.value])
+                    effective_query = mem.get("effective_query", "")
+                    prev_text = mem.get("last_text", "")
 
-            more_count = _is_more_query(query)
-            mem = self.session_memory.get(session_id, {})
-            if more_count is not None or (query.strip().lower() in {"more", "next", "continue", "more please", "show more", "keep going"}):
-                all_results = mem.get("all_results", [])
-                if not all_results:
-                    return "There are no earlier results to continue. Ask me for a dataset (e.g., 'human EEG BIDS')."
-                page_size = more_count or mem.get("page_size", 15)
-                page = mem.get("page", 1) + 1
-                start = (page - 1) * page_size
-                batch = all_results[start:start + page_size]
-                if not batch:
-                    return "You've reached the end of the results. Try refining the query."
-                intents = mem.get("intents", [QueryIntent.DATA_DISCOVERY.value])
-                effective_query = mem.get("effective_query", "")
-                prev_text = mem.get("last_text", "")
-                
-                try:
-                    text = await call_gemini_for_final_synthesis(
-                        effective_query, batch, intents, start_number=start + 1, previous_text=prev_text
-                    )
-                except Exception:
-                    text = "Unable to process your request. Please try again."
-                if not self._session_is_current(session_id, session_token):
+                    try:
+                        text = await call_gemini_for_final_synthesis(
+                            effective_query,
+                            batch,
+                            intents,
+                            start_number=start + 1,
+                            previous_text=prev_text,
+                        )
+                    except Exception:
+                        text = "Unable to process your request. Please try again."
+                    if not self._session_is_current(session_id, session_token):
+                        return text
+                    self._touch_session(session_id)
+                    mem.update({
+                        "page": page,
+                        "page_size": page_size,
+                        "last_text": f"{prev_text}\n\n{text}"[-12000:],
+                    })
+                    self.session_memory[session_id] = mem
+                    self.session_memory.move_to_end(session_id)
+                    self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {text}"])
+                    self._trim_history(session_id)
                     return text
+
+                initial_state: AgentState = {
+                    "session_id": session_id,
+                    "query": query,
+                    "history": self.chat_history[session_id][-10:],
+                    "keywords": [],
+                    "effective_query": "",
+                    "intents": [],
+                    "ks_results": [],
+                    "vector_results": [],
+                    "final_results": [],
+                    "all_results": [],
+                    "start_number": 1,
+                    "previous_text": "",
+                    "final_response": "",
+                }
+                final_state = await self.graph.ainvoke(initial_state)
+                response_text = final_state.get(
+                    "final_response",
+                    "I encountered an unexpected empty response.",
+                )
+
+                if not self._session_is_current(session_id, session_token):
+                    return response_text
                 self._touch_session(session_id)
-                mem.update({
-                    "page": page,
-                    "page_size": page_size,
-                    "last_text": f"{prev_text}\n\n{text}"[-12000:],
-                })
-                self.session_memory[session_id] = mem
+                self.session_memory[session_id] = {
+                    "all_results": final_state.get("all_results", []),
+                    "page": 1,
+                    "page_size": 15,
+                    "effective_query": final_state.get("effective_query", initial_state["query"]),
+                    "keywords": final_state.get("keywords", []),
+                    "intents": final_state.get("intents", [QueryIntent.DATA_DISCOVERY.value]),
+                    "last_text": response_text,
+                }
                 self.session_memory.move_to_end(session_id)
-                self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {text}"])
+
+                self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {response_text}"])
                 self._trim_history(session_id)
-                return text
-
-            initial_state: AgentState = {
-                "session_id": session_id,
-                "query": query,
-                "history": self.chat_history[session_id][-10:],
-                "keywords": [],
-                "effective_query": "",
-                "intents": [],
-                "ks_results": [],
-                "vector_results": [],
-                "final_results": [],
-                "all_results": [],
-                "start_number": 1,
-                "previous_text": "",
-                "final_response": "",
-            }
-            final_state = await self.graph.ainvoke(initial_state)
-            response_text = final_state.get("final_response", "I encountered an unexpected empty response.")
-
-            if not self._session_is_current(session_id, session_token):
                 return response_text
-            self._touch_session(session_id)
-            self.session_memory[session_id] = {
-                "all_results": final_state.get("all_results", []),
-                "page": 1,
-                "page_size": 15,
-                "effective_query": final_state.get("effective_query", initial_state["query"]),
-                "keywords": final_state.get("keywords", []),
-                "intents": final_state.get("intents", [QueryIntent.DATA_DISCOVERY.value]),
-                "last_text": response_text,
-            }
-            self.session_memory.move_to_end(session_id)
-
-            self.chat_history[session_id].extend([f"User: {query}", f"Assistant: {response_text}"])
-            self._trim_history(session_id)
-            return response_text
+            finally:
+                self._release_session(session_id)
         except Exception as e:
             logger.error("Error in handle_chat: %s", e)
             import traceback
