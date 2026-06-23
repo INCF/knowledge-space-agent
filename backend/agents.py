@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph, END
 
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
+from rrf import reciprocal_rank_fusion
 
 
 #  LLM (Gemini) client setup 
@@ -436,24 +437,16 @@ async def execute_search(state: AgentState) -> Dict[str, Any]:
 
 
 def fuse_results(state: AgentState) -> AgentState:
-    logger.info("Node: Result Fusion")
+    logger.info("Node: Result Fusion (RRF)")
     ks_results = state.get("ks_results", [])
     vector_results = state.get("vector_results", [])
-    combined: Dict[str, dict] = {}
-    for res in vector_results:
-        if isinstance(res, dict):
-            doc_id = res.get("id") or res.get("_id") or f"vec_{len(combined)}"
-            combined[doc_id] = {**res, "final_score": res.get("similarity", 0) * 0.6}
-    for res in ks_results:
-        if isinstance(res, dict):
-            doc_id = res.get("_id") or res.get("id") or f"ks_{len(combined)}"
-            if doc_id in combined:
-                combined[doc_id]["final_score"] += res.get("_score", 0) * 0.4
-            else:
-                combined[doc_id] = {**res, "final_score": res.get("_score", 0) * 0.4}
-    all_sorted = sorted(combined.values(), key=lambda x: x.get("final_score", 0), reverse=True)
+    
+    # We pass both lists to RRF. RRF handles deduplication and ranking.
+    # It takes care of ranking documents that appear in either or both lists.
+    all_sorted = reciprocal_rank_fusion([vector_results, ks_results], k=60, top_k=60)
+    
     logger.info(
-        "Results summary: KS=%d, Vector=%d, Combined=%d",
+        "RRF fusion: KS=%d, Vector=%d → Combined=%d unique results",
         len(ks_results),
         len(vector_results),
         len(all_sorted),
