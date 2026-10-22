@@ -10,6 +10,9 @@ interface Message {
   timestamp: Date;
 }
 
+const CHAT_TIMEOUT_MS = 30000;
+const HEALTH_CHECK_INTERVAL_MS = 30000;
+
 interface ChatResponse {
   response: string;
   error: boolean;
@@ -44,8 +47,19 @@ Try asking me something like:
     };
     setMessages([welcomeMessage]);
 
-    // Check API health
+    // Check API health now, on reconnect, and periodically
     checkApiHealth();
+    const handleOnline = () => checkApiHealth();
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    const healthTimer = window.setInterval(checkApiHealth, HEALTH_CHECK_INTERVAL_MS);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.clearInterval(healthTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -90,13 +104,17 @@ Try asking me something like:
     setInputValue('');
     setIsLoading(true);
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -114,27 +132,43 @@ Try asking me something like:
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === 'AbortError';
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'error',
-        content: 'Sorry, I encountered an error while processing your request. Please check your connection and try again.',
+        content: timedOut
+          ? 'The request took too long and was cancelled. Please try again or use a simpler query.'
+          : 'Sorry, I encountered an error while processing your request. Please check your connection and try again.',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
+      window.clearTimeout(timeoutId);
       setIsLoading(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   };
 
-  const clearChat = () => {
+  const clearChat = async () => {
     setMessages(messages.filter(msg => msg.id === 'welcome'));
+    try {
+      // Clear server-side conversation memory too (the UI uses the default session)
+      await fetch('/api/session/reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+      });
+    } catch (error) {
+      console.warn('Failed to reset backend session', error);
+    }
   };
 
   return (
@@ -195,7 +229,7 @@ Try asking me something like:
                 placeholder="Ask about neuroscience datasets, brain imaging data, or research topics..."
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 disabled={isLoading}
               />
               <button 
