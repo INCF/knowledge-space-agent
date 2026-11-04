@@ -100,6 +100,17 @@ npm install
 
 ```
 
+### Local development without Google Cloud
+
+When Vertex AI is not configured, the backend uses a small bundled set of public
+Knowledge Space dataset examples for local keyword search. This fallback works
+offline and is intended for development and testing; it is not a replacement
+for the production vector and Knowledge Space search services.
+
+Run the backend as usual with `uv run main.py`. Search queries such as
+`hippocampus`, `fMRI`, or `calcium imaging` return matching sample records with
+links to their public dataset pages.
+
 
 ---
 
