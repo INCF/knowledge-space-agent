@@ -1,0 +1,167 @@
+[
+  {
+    "id": "openneuro:ds001734",
+    "title": "NARPS",
+    "description": "Raw and preprocessed fMRI data for the mixed gambles task from the Neuroimaging Analysis Replication and Prediction Study.",
+    "primary_link": "https://openneuro.org/datasets/ds001734",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "fMRI",
+      "keywords": ["functional MRI", "neuroimaging", "decision making", "mixed gambles"]
+    }
+  },
+  {
+    "id": "openneuro:ds004496",
+    "title": "Natural Object Dataset",
+    "description": "Neuroimaging dataset studying how the brain processes visual stimuli from the natural environment.",
+    "primary_link": "https://openneuro.org/datasets/ds004496",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "fMRI",
+      "keywords": ["functional MRI", "visual neuroscience", "natural objects"]
+    }
+  },
+  {
+    "id": "openneuro:ds000001",
+    "title": "Balloon Analog Risk-taking Task",
+    "description": "Functional MRI dataset for the Balloon Analog Risk Task, also known as BART.",
+    "primary_link": "https://openneuro.org/datasets/ds000001",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "fMRI",
+      "keywords": ["functional MRI", "risk taking", "decision making"]
+    }
+  },
+  {
+    "id": "openneuro:ds001621",
+    "title": "Neural representations of events arise from temporal community structure",
+    "description": "fMRI data from an experiment investigating neural representations of events and temporal community structure.",
+    "primary_link": "https://openneuro.org/datasets/ds001621",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "fMRI",
+      "keywords": ["functional MRI", "memory", "events"]
+    }
+  },
+  {
+    "id": "openneuro:ds003126",
+    "title": "Reading-related functional activity in children with spelling deficits and dyslexia",
+    "description": "Raw 3 Tesla fMRI and T1 structural imaging data from children with typical reading skills, spelling deficits, and dyslexia.",
+    "primary_link": "https://openneuro.org/datasets/ds003126",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "fMRI",
+      "keywords": ["functional MRI", "structural MRI", "reading", "dyslexia", "children"]
+    }
+  },
+  {
+    "id": "openneuro:ds005574",
+    "title": "The Podcast ECoG Dataset",
+    "description": "Electrocorticography data for modeling neural activity during natural story listening.",
+    "primary_link": "https://openneuro.org/datasets/ds005574",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "electrophysiology",
+      "keywords": ["ECoG", "electrocorticography", "human", "language", "listening"]
+    }
+  },
+  {
+    "id": "openneuro:ds004865",
+    "title": "pyFR Delayed Free Recall Electrophysiology Study",
+    "description": "Behavioral and electrophysiology data from a preliminary delayed free-recall study.",
+    "primary_link": "https://openneuro.org/datasets/ds004865",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "electrophysiology",
+      "keywords": ["EEG", "memory", "free recall", "behavior"]
+    }
+  },
+  {
+    "id": "openneuro:ds004100",
+    "title": "HUP iEEG Epilepsy Dataset",
+    "description": "Intracranial EEG dataset collected from participants with epilepsy.",
+    "primary_link": "https://openneuro.org/datasets/ds004100",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "electrophysiology",
+      "keywords": ["iEEG", "intracranial EEG", "epilepsy"]
+    }
+  },
+  {
+    "id": "openneuro:ds004473",
+    "title": "sEEG Forced Two-Choice Task",
+    "description": "Stereoelectroencephalography data recorded during a forced two-choice response task in an epilepsy monitoring setting.",
+    "primary_link": "https://openneuro.org/datasets/ds004473",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "electrophysiology",
+      "keywords": ["sEEG", "stereo EEG", "epilepsy", "choice task"]
+    }
+  },
+  {
+    "id": "openneuro:ds003498",
+    "title": "Interictal iEEG During Slow-wave Sleep with HFO Markings",
+    "description": "Intracranial EEG recordings from 20 subjects with high-frequency oscillation event markings.",
+    "primary_link": "https://openneuro.org/datasets/ds003498",
+    "metadata": {
+      "source": "OpenNeuro",
+      "modality": "electrophysiology",
+      "keywords": ["iEEG", "intracranial EEG", "epilepsy", "sleep", "high-frequency oscillations"]
+    }
+  },
+  {
+    "id": "dandi:000054",
+    "title": "Plitt and Giocomo (2021): Experience-dependent contextual codes in the hippocampus",
+    "description": "Virtual-reality track data aligned with two-photon calcium imaging in mouse hippocampal CA1.",
+    "primary_link": "https://dandiarchive.org/dandiset/000054/draft",
+    "metadata": {
+      "source": "DANDI Archive",
+      "modality": "calcium imaging",
+      "keywords": ["two-photon", "hippocampus", "CA1", "mouse", "virtual reality"]
+    }
+  },
+  {
+    "id": "dandi:000728",
+    "title": "Allen Institute Visual Coding: Optical Physiology",
+    "description": "Allen Institute Brain Observatory visual-coding dataset with optical physiology recordings.",
+    "primary_link": "https://dandiarchive.org/dandiset/000728/draft",
+    "metadata": {
+      "source": "DANDI Archive",
+      "modality": "calcium imaging",
+      "keywords": ["optical physiology", "visual cortex", "Allen Institute", "mouse"]
+    }
+  },
+  {
+    "id": "dandi:000049",
+    "title": "Allen Institute: TF x SF Tuning in Mouse Visual Cortex",
+    "description": "Two-photon calcium imaging dataset measuring visual responses in mouse visual cortex.",
+    "primary_link": "https://dandiarchive.org/dandiset/000049/draft",
+    "metadata": {
+      "source": "DANDI Archive",
+      "modality": "calcium imaging",
+      "keywords": ["two-photon", "visual cortex", "mouse", "Allen Institute"]
+    }
+  },
+  {
+    "id": "dandi:000565",
+    "title": "C. elegans Whole-brain NeuroPAL and Calcium Imaging",
+    "description": "Whole-brain structural images and unstimulated calcium imaging from immobilized C. elegans.",
+    "primary_link": "https://dandiarchive.org/dandiset/000565/draft",
+    "metadata": {
+      "source": "DANDI Archive",
+      "modality": "calcium imaging",
+      "keywords": ["C. elegans", "whole brain", "NeuroPAL", "calcium imaging"]
+    }
+  },
+  {
+    "id": "ebrains:7fa2067c-fe0f-4492-af6a-3b25c69217e6",
+    "title": "Spontaneous Inhibitory Currents in CA1 Pyramidal Neurons",
+    "description": "Spontaneous inhibitory postsynaptic currents recorded from CA1 pyramidal neurons in adult wild-type and Tg2576 mice.",
+    "primary_link": "https://search.kg.ebrains.eu/instances/Dataset/7fa2067c-fe0f-4492-af6a-3b25c69217e6",
+    "metadata": {
+      "source": "EBRAINS",
+      "modality": "electrophysiology",
+      "keywords": ["patch clamp", "voltage clamp", "CA1", "hippocampus", "mouse"]
+    }
+  }
+]

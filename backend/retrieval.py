@@ -5,10 +5,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import torch
-from google.cloud import aiplatform, bigquery
-from transformers import AutoModel, AutoTokenizer
-
 from abc import ABC, abstractmethod
 
 
@@ -102,6 +98,8 @@ class VertexRetriever(BaseRetriever):
 
         # Cloud clients
         try:
+            from google.cloud import aiplatform, bigquery
+
             aiplatform.init(project=self.project_id, location=self.region)
             self.index_ep = aiplatform.MatchingEngineIndexEndpoint(
                 index_endpoint_name=self.index_endpoint_full
@@ -113,6 +111,9 @@ class VertexRetriever(BaseRetriever):
             return
 
         try:
+            import torch
+            from transformers import AutoModel, AutoTokenizer
+
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.embed_model_name, trust_remote_code=True
@@ -134,6 +135,8 @@ class VertexRetriever(BaseRetriever):
         normalized = " ".join((text or "").split())
         if self.query_char_limit > 0:
             normalized = normalized[: self.query_char_limit]
+        import torch
+
         toks = self.tokenizer(
             normalized,
             return_tensors="pt",
@@ -155,6 +158,8 @@ class VertexRetriever(BaseRetriever):
     def _bq_fetch(self, ids: List[str]) -> Dict[str, Dict[str, Any]]:
         if not ids:
             return {}
+        from google.cloud import bigquery
+
         table = f"{self.project_id}.{self.bq_dataset}.{self.bq_table}"
         sql = f"""
             SELECT datapoint_id, chunk, metadata_filters, source_file
@@ -267,6 +272,18 @@ def get_retriever() -> BaseRetriever:
     Factory for creating a retriever instance.
     Falls back to local retriever when Vertex is unavailable.
     """
+    required_settings = (
+        "GCP_PROJECT_ID",
+        "GCP_REGION",
+        "INDEX_ENDPOINT_ID_FULL",
+        "DEPLOYED_INDEX_ID",
+    )
+    if not all(os.getenv(setting) for setting in required_settings):
+        from local_retriever import LocalRetriever
+
+        logger.info("Vertex retriever is not configured. Using LocalRetriever.")
+        return LocalRetriever()
+
     vertex = VertexRetriever()
     if vertex.is_enabled:
         return vertex
@@ -274,4 +291,3 @@ def get_retriever() -> BaseRetriever:
     from local_retriever import LocalRetriever
     logger.info("Vertex retriever unavailable. Falling back to LocalRetriever.")
     return LocalRetriever()
-
