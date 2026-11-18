@@ -3,6 +3,7 @@ import os
 import re
 import json
 import asyncio
+import threading
 from enum import Enum
 from typing import Dict, List, Optional, TypedDict, Any
 import logging
@@ -63,25 +64,47 @@ def _require_llm_creds() -> None:
 
 
 _GENAI_CLIENT = None
+_CLIENT_LOCK = threading.Lock()
 
 
 def _get_genai_client():
     """
     Build a google.genai client for either Vertex (ADC or creds file) or API-key mode.
+    Uses double-checked locking to ensure thread-safe lazy initialization during concurrent cold starts.
     """
     global _GENAI_CLIENT
     if _GENAI_CLIENT is not None:
         return _GENAI_CLIENT
 
-    if _use_vertex():
-        project = os.getenv("GCP_PROJECT_ID")
-        location = os.getenv("GCP_REGION") or "europe-west4"
-        _ensure_google_creds_for_vertex()
-        _GENAI_CLIENT = genai.Client(vertexai=True, project=project, location=location)
-    else:
-        _GENAI_CLIENT = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    with _CLIENT_LOCK:
+        if _GENAI_CLIENT is None:
+            if _use_vertex():
+                project = os.getenv("GCP_PROJECT_ID")
+                location = os.getenv("GCP_REGION") or "europe-west4"
+                _ensure_google_creds_for_vertex()
+                client = genai.Client(vertexai=True, project=project, location=location)
+            else:
+                client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+            _GENAI_CLIENT = client
 
     return _GENAI_CLIENT
+
+
+def _reset_genai_client() -> None:
+    """
+    Thread-safe reset of the singleton instance for test isolation and re-authentication.
+    Gracefully closes active client resources if supported by the SDK.
+    """
+    global _GENAI_CLIENT
+    with _CLIENT_LOCK:
+        if _GENAI_CLIENT is not None:
+            try:
+                if hasattr(_GENAI_CLIENT, "close") and callable(_GENAI_CLIENT.close):
+                    _GENAI_CLIENT.close()
+            except Exception as e:
+                logger.warning("Error closing GenAI client during reset: %s", e)
+            finally:
+                _GENAI_CLIENT = None
 
 
 FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
