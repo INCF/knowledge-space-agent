@@ -11,6 +11,11 @@ logger = logging.getLogger("agents")
 
 from langgraph.graph import StateGraph, END
 
+
+class LLMConfigurationError(RuntimeError):
+    """Raised when the server cannot use the configured LLM provider."""
+
+
 from ks_search_tool import general_search, general_search_async, global_fuzzy_keyword_search
 from retrieval import get_retriever
 
@@ -20,7 +25,7 @@ try:
     from google import genai
     from google.genai import types as genai_types
 except Exception as _e:
-    raise RuntimeError("google-genai is required. Install with: pip install google-genai") from _e
+    raise LLMConfigurationError("google-genai is required. Install with: pip install google-genai") from _e
 
 
 def _use_vertex() -> bool:
@@ -55,11 +60,11 @@ def _require_llm_creds() -> None:
     """
     if _use_vertex():
         if not os.getenv("GCP_PROJECT_ID"):
-            raise RuntimeError("GCP_PROJECT_ID must be set for Vertex mode.")
+            raise LLMConfigurationError("GCP_PROJECT_ID must be set for Vertex mode.")
         _ensure_google_creds_for_vertex()
     else:
         if not os.getenv("GOOGLE_API_KEY"):
-            raise RuntimeError("GOOGLE_API_KEY must be set for API-key mode.")
+            raise LLMConfigurationError("GOOGLE_API_KEY must be set for API-key mode.")
 
 
 _GENAI_CLIENT = None
@@ -597,8 +602,11 @@ class NeuroscienceAssistant:
             if len(self.chat_history[session_id]) > 20:
                 self.chat_history[session_id] = self.chat_history[session_id][-20:]
             return response_text
+        except LLMConfigurationError as e:
+            logger.exception("LLM configuration error while handling chat")
+            logger.error("LLM configuration details: %s", e)
+            return "I'm sorry, my backend connection is currently misconfigured. Please contact the administrator."
         except Exception as e:
             logger.error("Error in handle_chat: %s", e)
-            import traceback
             logger.exception("Exception occurred in handle_chat")
             return "I encountered an error. Please try again."
